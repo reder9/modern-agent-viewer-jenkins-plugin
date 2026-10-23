@@ -1,0 +1,31 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+    <f:section title="Modern Agent Viewer">
+        <f:entry title="Default Landing Mode" field="defaultViewMode">
+            <f:select default="cards">
+                <option value="cards">Visual Card Matrix</option>
+                <option value="table">High-Density Data Grid Table</option>
+            </f:select>
+        </f:entry>
+        <f:entry title="Redirect classic computer page to Modern Agent Viewer" field="redirectComputerSet"
+                 description="When enabled, visiting the classic computer page will automatically display the modernized Agent Viewer dashboard (append ?legacy=true to view the classic page).">
+            <f:checkbox />
+        </f:entry>
+        <f:entry title="Modernize individual node pages" field="modernizeComputerPages"
+                 description="When enabled, individual computer pages (/computer/{name}) display modern hardware metrics, gauges, and toolbar capsules.">
+            <f:checkbox default="true" />
+        </f:entry>
+        <f:entry title="Storage Warning Threshold (%)" field="storageWarningPercent"
+                 description="Storage percentage used at which an agent shows a warning state (default: 78%).">
+            <f:number default="78" min="10" max="99" />
+        </f:entry>
+        <f:entry title="Storage Critical Threshold (%)" field="storageCriticalPercent"
+                 description="Storage percentage used at which an agent triggers a critical alert (default: 90%).">
+            <f:number default="90" min="10" max="100" />
+        </f:entry>
+        <f:entry title="Auto-Refresh Interval (seconds)" field="autoRefreshSeconds"
+                 description="Default auto-refresh polling interval in seconds (0 to disable).">
+            <f:number default="15" min="0" max="300" />
+        </f:entry>
+    </f:section>
+</j:jelly>

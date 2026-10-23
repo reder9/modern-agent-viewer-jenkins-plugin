@@ -1,0 +1,463 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout">
+  <l:layout title="Modern Agent Viewer - Build Agents &amp; Computers">
+    <l:header>
+      <link rel="stylesheet" href="${resURL}/plugin/modern-agent-viewer/css/fleetlens.css" type="text/css"/>
+    </l:header>
+    <l:side-panel>
+      <l:tasks>
+        <l:task icon="symbol-arrow-back-outline plugin-ionicons-api" href="${rootURL}/" title="${%Back to Dashboard}"/>
+        <l:task icon="symbol-server-outline plugin-ionicons-api" href="${rootURL}/computer?legacy=true" title="${%Classic Node View}"/>
+        <l:task icon="symbol-add-outline plugin-ionicons-api" href="${rootURL}/computer/new" title="${%New Node}"/>
+        <l:task icon="symbol-settings-outline plugin-ionicons-api" href="${rootURL}/manage/configure" title="${%Configure System}"/>
+      </l:tasks>
+    </l:side-panel>
+    <l:main-panel>
+      <div id="fleetlens-app"
+           class="fleetlens-root"
+           data-root-url="${rootURL}"
+           data-api-url="${rootURL}/agents/api"
+           data-default-view="${it.configuration.defaultViewMode}"
+           data-refresh-interval="${it.configuration.autoRefreshSeconds}">
+
+        <!-- Pre-hydrated initial telemetry state -->
+        <script type="application/json" id="fleetlens-initial-data">
+          ${it.initialStateJson}
+        </script>
+
+        <!-- Fleet Header -->
+        <header class="fleet-header">
+          <div class="fleet-header-title">
+            <div class="title-with-badge">
+              <h1 class="fleet-logo">
+                <svg class="fl-header-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+                Modern Agent Viewer
+              </h1>
+              <span class="fleet-badge-live">LIVE TELEMETRY</span>
+            </div>
+            <p class="fleet-subtitle">Modern agent and computer control center with dynamic provider categorization, storage telemetry, and dual-clock uptime.</p>
+          </div>
+          <div class="fleet-header-actions">
+            <a href="${rootURL}/computer?legacy=true" class="jenkins-button jenkins-button--tertiary" title="Switch back to classic Jenkins table">
+              Classic View
+            </a>
+            <a href="${rootURL}/computer/new" class="jenkins-button jenkins-button--primary">
+              + New Node
+            </a>
+          </div>
+        </header>
+
+        <!-- KPI Summary Cards -->
+        <section class="kpi-grid" id="kpi-summary">
+          <div class="kpi-card kpi-total">
+            <span class="kpi-label">Total Machines</span>
+            <span class="kpi-value" id="kpi-val-total">--</span>
+            <span class="kpi-sub" id="kpi-sub-total">Scanning fleet...</span>
+          </div>
+          <div class="kpi-card kpi-online">
+            <span class="kpi-label">Online &amp; Ready</span>
+            <span class="kpi-value" id="kpi-val-online">--</span>
+            <span class="kpi-sub" id="kpi-sub-online">--</span>
+          </div>
+          <div class="kpi-card kpi-busy">
+            <span class="kpi-label">Active Workload</span>
+            <span class="kpi-value" id="kpi-val-busy">--</span>
+            <span class="kpi-sub" id="kpi-sub-busy">--</span>
+          </div>
+          <div class="kpi-card kpi-idle">
+            <span class="kpi-label">Idle Capacity</span>
+            <span class="kpi-value" id="kpi-val-idle">--</span>
+            <span class="kpi-sub" id="kpi-sub-idle">--</span>
+          </div>
+          <div class="kpi-card kpi-offline">
+            <span class="kpi-label">Offline / Disconnected</span>
+            <span class="kpi-value" id="kpi-val-offline">--</span>
+            <span class="kpi-sub" id="kpi-sub-offline">--</span>
+          </div>
+          <div class="kpi-card kpi-storage" id="kpi-card-storage">
+            <span class="kpi-label">Storage Health</span>
+            <span class="kpi-value" id="kpi-val-storage">--</span>
+            <span class="kpi-sub" id="kpi-sub-storage">Checking disk...</span>
+          </div>
+        </section>
+
+        <!-- Live Queue Inspector Banner (Appears when builds are waiting for agents) -->
+        <section id="fleet-queue-panel" class="fleet-queue-banner" style="display: none;">
+          <div class="queue-banner-header">
+            <div class="queue-header-left">
+              <svg class="queue-header-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg>
+              <div class="queue-title-wrap">
+                <strong class="queue-title">Live Build Queue Demand</strong>
+                <span id="queue-badge-count" class="queue-badge-count">0 waiting</span>
+              </div>
+            </div>
+            <div class="queue-header-right">
+              <span class="queue-hint">Click &quot;Filter Fleet&quot; on any job to isolate candidate machines</span>
+            </div>
+          </div>
+          <div id="fleet-queue-items-list" class="queue-items-container">
+            <!-- Dynamically populated queue items -->
+          </div>
+        </section>
+
+        <!-- Toolbar: Filters, Search, Views -->
+        <section class="fleet-toolbar">
+          <div class="toolbar-primary-filters">
+            <!-- Provisioner Filter Pills -->
+            <div class="pill-group" id="filter-provisioner">
+              <button class="filter-pill active" data-prov="ALL">All Providers (<span class="count">0</span>)</button>
+              <button class="filter-pill" data-prov="docker">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                Docker (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="kubernetes">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"></path></svg>
+                Kubernetes (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="aws-ec2">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+                AWS EC2 (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="azure">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                Azure (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="gcp">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                GCP (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="proxmox">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                Proxmox (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="vsphere">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+                vSphere (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="swarm">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z"></path><path d="M12 12l8-4.5M12 12v8M12 12L4 7.5"></path></svg>
+                Swarm (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="openstack">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="4" rx="1"></rect><rect x="4" y="10" width="16" height="4" rx="1"></rect><rect x="4" y="16" width="16" height="4" rx="1"></rect></svg>
+                OpenStack (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="nomad">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                Nomad (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="static">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                Static (<span class="count">0</span>)
+              </button>
+              <button class="filter-pill" data-prov="controller">
+                <svg class="pill-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                Controller (<span class="count">0</span>)
+              </button>
+            </div>
+          </div>
+
+          <div class="toolbar-secondary-row">
+            <!-- OS Filters -->
+            <div class="pill-group-mini" id="filter-os">
+              <button class="filter-chip active" data-os="ALL">All OS</button>
+              <button class="filter-chip" data-os="LINUX">
+                <svg class="chip-icon" width="12" height="12" viewBox="0 0 448 512" fill="currentColor"><path d="M220.8 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5.2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4.2-.8.7-.6 1.1.3 1.3 2.3 1.1 3.4 1.7zm-21.9 1.7c1.2 0 2-1.2 3-1.7 1.1-.6 3.1-.4 3.5-1.6.2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5.1-1.3.6-3.4 1.5-3.2 2.9.1 1 1.8 1.5 2.8 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9-1.3-.8-2.7-1.5-4.1-2 9.2-27.3 5.6-54.5-3.7-79.1-11.4-30.1-31.3-56.4-46.5-74.4-17.1-21.5-33.7-41.9-33.4-72C311.1 85.4 315.7.1 234.8 0 132.4-.2 158 103.4 156.9 135.2c-1.7 23.4-6.4 41.8-22.5 64.7-18.9 22.5-45.5 58.8-58.1 96.7-6 17.9-8.8 36.1-6.2 53.3-6.5 5.8-11.4 14.7-16.6 20.2-4.2 4.3-10.3 5.9-17 8.3s-14 6-18.5 14.5c-2.1 3.9-2.8 8.1-2.8 12.4 0 3.9.6 7.9 1.2 11.8 1.2 8.1 2.5 15.7.8 20.8-5.2 14.4-5.9 24.4-2.2 31.7 3.8 7.3 11.4 10.5 20.1 12.3 17.3 3.6 40.8 2.7 59.3 12.5 19.8 10.4 39.9 14.1 55.9 10.4 11.6-2.6 21.1-9.6 25.9-20.2 12.5-.1 26.3-5.4 48.3-6.6 14.9-1.2 33.6 5.3 55.1 4.1.6 2.3 1.4 4.6 2.5 6.7v.1c8.3 16.7 23.8 24.3 40.3 23 16.6-1.3 34.1-11 48.3-27.9 13.6-16.4 36-23.2 50.9-32.2 7.4-4.5 13.4-10.1 13.9-18.3.4-8.2-4.4-17.3-15.5-29.7zM223.7 87.3c9.8-22.2 34.2-21.8 44-.4 6.5 14.2 3.6 30.9-4.3 40.4-1.6-.8-5.9-2.6-12.6-4.9 1.1-1.2 3.1-2.7 3.9-4.6 4.8-11.8-.2-27-9.1-27.3-7.3-.5-13.9 10.8-11.8 23-4.1-2-9.4-3.5-13-4.4-1-6.9-.3-14.6 2.9-21.8zM183 75.8c10.1 0 20.8 14.2 19.1 33.5-3.5 1-7.1 2.5-10.2 4.6 1.2-8.9-3.3-20.1-9.6-19.6-8.4.7-9.8 21.2-1.8 28.1 1 .8 1.9-.2-5.9 5.5-15.6-14.6-10.5-52.1 8.4-52.1zm-13.6 60.7c6.2-4.6 13.6-10 14.1-10.5 4.7-4.4 13.5-14.2 27.9-14.2 7.1 0 15.6 2.3 25.9 8.9 6.3 4.1 11.3 4.4 22.6 9.3 8.4 3.5 13.7 9.7 10.5 18.2-2.6 7.1-11 14.4-22.7 18.1-11.1 3.6-19.8 16-38.2 14.9-3.9-.2-7-1-9.6-2.1-8-3.5-12.2-10.4-20-15-8.6-4.8-13.2-10.4-14.7-15.3-1.4-4.9 0-9 4.2-12.3zm3.3 334c-2.7 35.1-43.9 34.4-75.3 18-29.9-15.8-68.6-6.5-76.5-21.9-2.4-4.7-2.4-12.7 2.6-26.4v-.2c2.4-7.6.6-16-.6-23.9-1.2-7.8-1.8-15 .9-20 3.5-6.7 8.5-9.1 14.8-11.3 10.3-3.7 11.8-3.4 19.6-9.9 5.5-5.7 9.5-12.9 14.3-18 5.1-5.5 10-8.1 17.7-6.9 8.1 1.2 15.1 6.8 21.9 16l19.6 35.6c9.5 19.9 43.1 48.4 41 68.9zm-1.4-25.9c-4.1-6.6-9.6-13.6-14.4-19.6 7.1 0 14.2-2.2 16.7-8.9 2.3-6.2 0-14.9-7.4-24.9-13.5-18.2-38.3-32.5-38.3-32.5-13.5-8.4-21.1-18.7-24.6-29.9s-3-23.3-.3-35.2c5.2-22.9 18.6-45.2 27.2-59.2 2.3-1.7.8 3.2-8.7 20.8-8.5 16.1-24.4 53.3-2.6 82.4.6-20.7 5.5-41.8 13.8-61.5 12-27.4 37.3-74.9 39.3-112.7 1.1.8 4.6 3.2 6.2 4.1 4.6 2.7 8.1 6.7 12.6 10.3 12.4 10 28.5 9.2 42.4 1.2 6.2-3.5 11.2-7.5 15.9-9 9.9-3.1 17.8-8.6 22.3-15 7.7 30.4 25.7 74.3 37.2 95.7 6.1 11.4 18.3 35.5 23.6 64.6 3.3-.1 7 .4 10.9 1.4 13.8-35.7-11.7-74.2-23.3-84.9-4.7-4.6-4.9-6.6-2.6-6.5 12.6 11.2 29.2 33.7 35.2 59 2.8 11.6 3.3 23.7.4 35.7 16.4 6.8 35.9 17.9 30.7 34.8-2.2-.1-3.2 0-4.2 0 3.2-10.1-3.9-17.6-22.8-26.1-19.6-8.6-36-8.6-38.3 12.5-12.1 4.2-18.3 14.7-21.4 27.3-2.8 11.2-3.6 24.7-4.4 39.9-.5 7.7-3.6 18-6.8 29-32.1 22.9-76.7 32.9-114.3 7.2zm257.4-11.5c-.9 16.8-41.2 19.9-63.2 46.5-13.2 15.7-29.4 24.4-43.6 25.5s-26.5-4.8-33.7-19.3c-4.7-11.1-2.4-23.1 1.1-36.3 3.7-14.2 9.2-28.8 9.9-40.6.8-15.2 1.7-28.5 4.2-38.7 2.6-10.3 6.6-17.2 13.7-21.1.3-.2.7-.3 1-.5.8 13.2 7.3 26.6 18.8 29.5 12.6 3.3 30.7-7.5 38.4-16.3 9-.3 15.7-.9 22.6 5.1 9.9 8.5 7.1 30.3 17.1 41.6 10.6 11.6 14 19.5 13.7 24.6zM173.3 148.7c2 1.9 4.7 4.5 8 7.1 6.6 5.2 15.8 10.6 27.3 10.6 11.6 0 22.5-5.9 31.8-10.8 4.9-2.6 10.9-7 14.8-10.4s5.9-6.3 3.1-6.6-2.6 2.6-6 5.1c-4.4 3.2-9.7 7.4-13.9 9.8-7.4 4.2-19.5 10.2-29.9 10.2s-18.7-4.8-24.9-9.7c-3.1-2.5-5.7-5-7.7-6.9-1.5-1.4-1.9-4.6-4.3-4.9-1.4-.1-1.8 3.7 1.7 6.5z"/></svg>
+                Linux
+              </button>
+              <button class="filter-chip" data-os="WINDOWS">
+                <svg class="chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0V3.449zm10.949-1.651L24 0v11.4H10.949V1.798zM0 12.6h9.75v9.451L0 20.699V12.6zm10.949 0H24V24l-13.051-1.801V12.6z"/></svg>
+                Windows
+              </button>
+              <button class="filter-chip" data-os="MACOS">
+                <svg class="chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.43c.66-.82 1.11-1.96.99-3.1-.96.04-2.12.64-2.8 1.44-.61.71-1.14 1.87-1 2.99 1.07.08 2.16-.54 2.81-1.33z"/></svg>
+                macOS
+              </button>
+            </div>
+
+            <!-- Instant Search Input -->
+            <div class="fleet-search-wrap">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="fleet-search" class="fleet-search-input" placeholder="Search by name, label, IP, host, or AMI/container..."/>
+              <button id="search-clear" class="search-clear-btn" style="display: none;" title="Clear search">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Status Dropdown -->
+            <select id="filter-status" class="fleet-select">
+              <option value="ALL">All Statuses</option>
+              <option value="ONLINE">Online Only</option>
+              <option value="BUSY">Busy (Executing)</option>
+              <option value="IDLE">Idle Only</option>
+              <option value="OFFLINE">Offline Only</option>
+              <option value="TEMPORARILY_OFFLINE">Maintenance / Suspended</option>
+              <option value="STORAGE_ALERT">Storage Warning / Alert</option>
+            </select>
+
+            <!-- Layout Mode Switcher -->
+            <div class="view-switcher">
+              <button id="view-mode-cards" class="view-btn active" title="Visual Cards View">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M4 4h7v7H4V4zm0 9h7v7H4v-7zm9-9h7v7h-7V4zm0 9h7v7h-7v-7z"/>
+                </svg>
+                <span>Cards</span>
+              </button>
+              <button id="view-mode-table" class="view-btn" title="High-Density Data Grid">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M4 5h16v3H4V5zm0 5h16v3H4v-3zm0 5h16v4H4v-4z"/>
+                </svg>
+                <span>Table</span>
+              </button>
+            </div>
+
+            <!-- Auto-Refresh Control -->
+            <div class="refresh-control">
+              <button id="btn-refresh-now" class="refresh-spin-btn" title="Refresh Now">
+                <svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+              </button>
+              <select id="select-refresh-rate" class="fleet-select-sm">
+                <option value="0">Off</option>
+                <option value="5">5s</option>
+                <option value="15" selected="selected">15s</option>
+                <option value="30">30s</option>
+                <option value="60">60s</option>
+              </select>
+              <span id="last-updated-text" class="last-updated-label">Updated just now</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Main Display Container (Populated dynamically) -->
+        <main class="fleet-content-area">
+          <div id="fleet-loading" class="fleet-loading-state">
+            <div class="spinner"></div>
+            <p>Scanning machines and gathering telemetry...</p>
+          </div>
+
+          <!-- Cards Matrix View -->
+          <div id="fleet-cards-view" class="fleet-cards-grid" style="display: none;"></div>
+
+          <!-- Data Grid Table View -->
+          <div id="fleet-table-view" class="fleet-table-container" style="display: none;">
+            <table class="fleet-data-table">
+              <thead>
+                <tr>
+                  <th data-sort="name">Machine Name</th>
+                  <th data-sort="provisioner">Provider / Origin</th>
+                  <th data-sort="os">OS &amp; Arch</th>
+                  <th data-sort="status">Status</th>
+                  <th data-sort="storage">Disk Space (Used / Total)</th>
+                  <th data-sort="connection">Session Connected</th>
+                  <th data-sort="uptime">Host Uptime</th>
+                  <th data-sort="executors">Executors</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="fleet-table-body"></tbody>
+            </table>
+          </div>
+
+          <!-- Empty State -->
+          <div id="fleet-empty" class="fleet-empty-state" style="display: none;">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <h3 id="fleet-empty-title">No matching machines found</h3>
+            <p id="fleet-empty-desc">Try resetting the search query or adjusting your provider/OS filters.</p>
+            <button id="btn-reset-filters" class="jenkins-button jenkins-button--tertiary">Reset All Filters</button>
+          </div>
+        </main>
+
+        <!-- Modal: Take Offline / Bring Online Dialog -->
+        <div id="modal-offline" class="fleet-modal-backdrop" style="display: none;">
+          <div class="fleet-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <div class="modal-header">
+              <div class="modal-title-wrap">
+                <svg id="modal-header-icon" class="modal-header-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <h3 id="modal-title">Take Machine Offline</h3>
+              </div>
+              <button class="modal-close" id="modal-close-btn" aria-label="Close dialog" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <p id="modal-desc" class="modal-description">Mark this machine temporarily offline for maintenance:</p>
+              
+              <div id="modal-reason-container" class="modal-reason-group">
+                <div class="modal-label-row">
+                  <label for="modal-offline-reason" class="modal-field-label">Offline Reason</label>
+                  <span class="modal-field-hint">Visible in queue bottlenecks and agent status</span>
+                </div>
+
+                <div class="modal-presets-row" id="modal-presets">
+                  <span class="preset-label">Quick Presets:</span>
+                  <button type="button" class="preset-pill" data-preset="Scheduled OS maintenance and security patching">OS Patching</button>
+                  <button type="button" class="preset-pill" data-preset="Workspace disk cleanup and cache purge in progress">Disk Cleanup</button>
+                  <button type="button" class="preset-pill" data-preset="Upgrading build tooling, SDKs, and runtime dependencies">Tooling Upgrade</button>
+                  <button type="button" class="preset-pill" data-preset="Investigating persistent build environment failure">Investigation</button>
+                </div>
+
+                <textarea id="modal-offline-reason"
+                          class="fleet-textarea"
+                          rows="3"
+                          placeholder="Provide a clear reason for your team (e.g. Upgrading kernel, ETA 30 minutes)..."></textarea>
+              </div>
+
+              <input type="hidden" id="modal-agent-name" value="" />
+              <input type="hidden" id="modal-offline-target-state" value="" />
+            </div>
+            <div class="modal-footer">
+              <button id="modal-cancel-btn" type="button" class="jenkins-button jenkins-button--tertiary">Cancel</button>
+              <button id="modal-confirm-btn" type="button" class="jenkins-button jenkins-button--primary">Take Offline</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Quick Connect / SSH Helper Dialog -->
+        <div id="modal-connect" class="fleet-modal-backdrop" style="display: none;">
+          <div class="fleet-modal" style="max-width: 680px;" role="dialog" aria-modal="true" aria-labelledby="connect-modal-title">
+            <div class="modal-header">
+              <div class="modal-title-wrap">
+                <svg class="modal-header-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--fl-brand-blue, #2563eb);">
+                  <polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                <h3 id="connect-modal-title">Connect to Agent</h3>
+              </div>
+              <button class="modal-close" id="connect-modal-close-btn" aria-label="Close dialog" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div id="connect-modal-agent-badges" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;"></div>
+              <p id="connect-modal-desc" class="modal-description" style="margin-bottom: 14px;">Select a command recipe below to interact with this build node directly from your local terminal or CLI:</p>
+              <div id="connect-commands-container" class="connect-commands-list"></div>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+              <div style="display: flex; gap: 8px;">
+                <a id="connect-modal-script-link" href="#" target="_blank" class="jenkins-button jenkins-button--tertiary" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                  Groovy Console
+                </a>
+                <button id="connect-modal-terminal-btn" type="button" class="jenkins-button jenkins-button--tertiary" style="display: inline-flex; align-items: center; gap: 6px;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                  Diagnostic Console
+                </button>
+              </div>
+              <button id="connect-modal-done-btn" type="button" class="jenkins-button jenkins-button--primary">Done</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: Agent Diagnostic Console Dialog -->
+        <div id="modal-terminal" class="fleet-modal-backdrop" style="display: none;">
+          <div class="fleet-modal terminal-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="terminal-modal-title">
+            <div class="modal-header">
+              <div class="modal-title-wrap">
+                <svg class="modal-header-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--fl-brand-blue, #2563eb);">
+                  <polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                <h3 id="terminal-modal-title">Agent Diagnostic Console</h3>
+              </div>
+              <button class="modal-close" id="terminal-modal-close-btn" aria-label="Close dialog" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body" style="padding-bottom: 8px;">
+              <div id="terminal-modal-agent-badges" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;"></div>
+              <div class="terminal-presets-bar">
+                <span class="terminal-presets-label">Diagnostic Presets:</span>
+                <div class="terminal-presets-list" id="terminal-presets-container"></div>
+              </div>
+              <div class="terminal-input-bar">
+                <span class="terminal-prompt-symbol" id="terminal-prompt-symbol">$</span>
+                <input type="text" class="terminal-cmd-input" id="terminal-cmd-input" placeholder="Enter shell diagnostic command (e.g. df -h, ps aux, java -version)..." spellcheck="false" autocomplete="off" />
+                <button class="jenkins-button jenkins-button--primary terminal-run-btn" id="terminal-run-btn" type="button">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  Run
+                </button>
+              </div>
+              <div class="terminal-frame">
+                <div class="terminal-window-header">
+                  <div class="terminal-window-controls">
+                    <span class="terminal-dot red"></span>
+                    <span class="terminal-dot yellow"></span>
+                    <span class="terminal-dot green"></span>
+                  </div>
+                  <span class="terminal-window-title" id="terminal-window-title">Remoting Channel</span>
+                  <div class="terminal-actions-group">
+                    <button class="terminal-btn-sm" id="terminal-copy-btn" type="button" title="Copy output">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>Copy</span>
+                    </button>
+                    <button class="terminal-btn-sm" id="terminal-clear-btn" type="button" title="Clear terminal">
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="terminal-viewport" id="terminal-viewport" tabindex="0">Modern Agent Viewer Diagnostic Console initialized.
+Select a 1-click diagnostic preset above or enter a custom shell command.
+Remoting channel encrypted, executions are audited to Jenkins system logs.</div>
+                <div class="terminal-status-bar">
+                  <div class="terminal-status-info">
+                    <span id="terminal-status-text">Ready</span>
+                    <span id="terminal-exit-badge" class="terminal-exit-badge" style="display: none;">Exit: 0</span>
+                    <span id="terminal-duration" style="display: none;">0ms</span>
+                  </div>
+                  <div class="terminal-security-notice">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    <span>Timeout: 20s | Buffer: 256KB | Audit Logged</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+              <a id="terminal-modal-script-link" href="#" target="_blank" class="jenkins-button jenkins-button--tertiary" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                Open Groovy Script Console
+              </a>
+              <button id="terminal-modal-done-btn" type="button" class="jenkins-button jenkins-button--primary">Close</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <script src="${resURL}/plugin/modern-agent-viewer/js/fleetlens.js"></script>
+    </l:main-panel>
+  </l:layout>
+</j:jelly>

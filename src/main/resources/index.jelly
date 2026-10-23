@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+    Modern Agent Viewer is a modernized computer and agent operations console for Jenkins, featuring dynamic provider categorization (Docker, Kubernetes, AWS EC2, Azure, Static), OS distribution badges, real-time visual storage gauges, uptime telemetry, and interactive diagnostic consoles.
+</div>
