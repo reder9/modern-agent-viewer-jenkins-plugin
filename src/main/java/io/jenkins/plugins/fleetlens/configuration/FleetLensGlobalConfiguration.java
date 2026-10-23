@@ -3,6 +3,7 @@ package io.jenkins.plugins.fleetlens.configuration;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.util.FormValidation;
+import io.jenkins.plugins.fleetlens.Messages;
 import io.jenkins.plugins.fleetlens.monitoring.AgentStorageService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentUptimeService;
 import jenkins.model.GlobalConfiguration;
@@ -96,6 +97,11 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
     }
 
     @Override
+    public String getDisplayName() {
+        return Messages.GlobalConfiguration_SectionTitle();
+    }
+
+    @Override
     public boolean configure(StaplerRequest2 req, JSONObject json) throws FormException {
         req.bindJSON(this, json);
         save();
@@ -104,14 +110,14 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
 
     public FormValidation doCheckStorageWarningPercent(@QueryParameter int value) {
         if (value < 10 || value > 99) {
-            return FormValidation.error("Warning percentage must be between 10% and 99%");
+            return FormValidation.error(Messages.GlobalConfiguration_InvalidStorageWarning());
         }
         return FormValidation.ok();
     }
 
     public FormValidation doCheckStorageCriticalPercent(@QueryParameter int value) {
         if (value < 10 || value > 100) {
-            return FormValidation.error("Critical percentage must be between 10% and 100%");
+            return FormValidation.error(Messages.GlobalConfiguration_InvalidStorageCritical());
         }
         return FormValidation.ok();
     }

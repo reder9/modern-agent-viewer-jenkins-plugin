@@ -48,7 +48,7 @@ public class FleetLensAction implements RootAction {
 
     @Override
     public String getDisplayName() {
-        return "Modern Agent Viewer";
+        return Messages.ModernAgentViewer_DisplayName();
     }
 
     @Override
@@ -104,6 +104,46 @@ public class FleetLensAction implements RootAction {
     }
 
     @GET
+    public void doExportCsv(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
+        Jenkins.get().checkPermission(Jenkins.READ);
+        List<AgentDto> agents = FleetLensDataService.getAllAgents();
+
+        rsp.setContentType("text/csv; charset=UTF-8");
+        rsp.setHeader("Content-Disposition", "attachment; filename=\"jenkins-agent-fleet.csv\"");
+
+        try (java.io.PrintWriter writer = rsp.getWriter()) {
+            writer.println("Name,Status,Provider,OS,Architecture,IP Address,Storage Used,Storage Total,Storage Percent,Session Connected,Host Uptime,Executors Active,Executors Total,Labels");
+            for (AgentDto a : agents) {
+                String name = csvEscape(a.getName());
+                String status = csvEscape(a.getStatus());
+                String prov = a.getProvisioner() != null ? csvEscape(a.getProvisioner().getDisplayName()) : "Static";
+                String os = a.getOs() != null ? csvEscape(a.getOs().getPrettyName()) : "Unknown";
+                String arch = a.getOs() != null ? csvEscape(a.getOs().getArch()) : "";
+                String ip = a.getIpAddress() != null ? csvEscape(a.getIpAddress()) : "";
+                String storageUsed = a.getStorage() != null ? csvEscape(a.getStorage().getUsedHuman()) : "";
+                String storageTotal = a.getStorage() != null ? csvEscape(a.getStorage().getTotalHuman()) : "";
+                String storagePercent = (a.getStorage() != null && a.getStorage().getPercentUsed() >= 0) ? (a.getStorage().getPercentUsed() + "%") : "";
+                String sessionConn = a.getTimeMetrics() != null ? csvEscape(a.getTimeMetrics().getConnectedDurationHuman()) : "";
+                String hostUptime = a.getTimeMetrics() != null ? csvEscape(a.getTimeMetrics().getHostUptimeHuman()) : "";
+                long execActive = a.getExecutors() != null ? a.getExecutors().stream().filter(io.jenkins.plugins.fleetlens.api.dto.ExecutorSlotDto::isBusy).count() : 0;
+                int execTotal = a.getNumExecutors();
+                String labels = a.getLabels() != null ? csvEscape(String.join(" ", a.getLabels())) : "";
+
+                writer.println(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%s",
+                        name, status, prov, os, arch, ip, storageUsed, storageTotal, storagePercent, sessionConn, hostUptime, execActive, execTotal, labels));
+            }
+        }
+    }
+
+    private String csvEscape(String val) {
+        if (val == null) return "";
+        if (val.contains(",") || val.contains("\"") || val.contains("\n") || val.contains("\r")) {
+            return "\"" + val.replace("\"", "\"\"") + "\"";
+        }
+        return val;
+    }
+
+    @GET
     public HttpResponse doAgent(@QueryParameter String name) {
         Jenkins.get().checkPermission(Jenkins.READ);
         if (name == null || name.trim().isEmpty()) {
@@ -147,6 +187,46 @@ public class FleetLensAction implements RootAction {
         result.put("temporarilyOffline", computer.isTemporarilyOffline());
         result.put("status", computer.isTemporarilyOffline() ? "TEMPORARILY_OFFLINE" : (computer.isOnline() ? "ONLINE" : "OFFLINE"));
 
+        return HttpResponses.okJSON(result);
+    }
+
+    @RequirePOST
+    public HttpResponse doBulkToggleOffline(@QueryParameter String names,
+                                            @QueryParameter boolean offline,
+                                            @QueryParameter String reason) {
+        if (names == null || names.trim().isEmpty()) {
+            return HttpResponses.errorJSON("No agent names provided");
+        }
+
+        String[] nameArr = names.split(",");
+        int updated = 0;
+        List<String> failed = new java.util.ArrayList<>();
+
+        String cause = (reason != null && !reason.trim().isEmpty())
+                ? reason.trim()
+                : "Bulk update via Modern Agent Viewer";
+
+        for (String raw : nameArr) {
+            String n = raw.trim();
+            if (n.isEmpty() || "(built-in)".equalsIgnoreCase(n)) continue;
+            Computer computer = findComputer(n);
+            if (computer != null && computer.hasPermission(Computer.DISCONNECT)) {
+                if (offline) {
+                    computer.setTemporarilyOffline(true, new OfflineCause.UserCause(User.current(), cause));
+                } else {
+                    computer.setTemporarilyOffline(false, null);
+                }
+                updated++;
+            } else {
+                failed.add(n);
+            }
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("updatedCount", updated);
+        result.put("failedCount", failed.size());
+        result.put("failedNames", failed);
         return HttpResponses.okJSON(result);
     }
 

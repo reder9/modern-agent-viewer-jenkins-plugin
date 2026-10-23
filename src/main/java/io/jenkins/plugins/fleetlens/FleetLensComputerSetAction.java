@@ -23,7 +23,7 @@ public class FleetLensComputerSetAction implements Action {
 
     @Override
     public String getDisplayName() {
-        return "Modern Agent Viewer";
+        return Messages.ModernAgentViewer_DisplayName();
     }
 
     @Override

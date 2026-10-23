@@ -245,11 +245,45 @@
               </select>
               <span id="last-updated-text" class="last-updated-label">Updated just now</span>
             </div>
+
+            <!-- Fleet Inventory Export -->
+            <div class="export-control">
+              <button id="btn-export-csv" class="export-btn" title="Export Fleet to CSV" type="button">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Export CSV</span>
+              </button>
+              <button id="btn-export-json" class="export-btn" title="Export Fleet to JSON" type="button">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                <span>JSON</span>
+              </button>
+            </div>
           </div>
         </section>
 
         <!-- Main Display Container (Populated dynamically) -->
         <main class="fleet-content-area">
+          <!-- Bulk Operations Bar (appears when 1 or more agents are selected) -->
+          <div id="bulk-actions-bar" class="bulk-actions-bar" style="display: none;">
+            <div class="bulk-info">
+              <span id="bulk-selected-count">0 machines selected</span>
+            </div>
+            <div class="bulk-buttons">
+              <button id="btn-bulk-offline" class="bulk-action-btn bulk-btn-offline" type="button" title="Take selected agents offline">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="3.5" height="16"></rect><rect x="14.5" y="4" width="3.5" height="16"></rect></svg>
+                <span>Take Offline</span>
+              </button>
+              <button id="btn-bulk-online" class="bulk-action-btn bulk-btn-online" type="button" title="Bring selected agents online">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Bring Online</span>
+              </button>
+              <button id="btn-bulk-copy-ips" class="bulk-action-btn" type="button" title="Copy IP addresses of selected agents">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Copy IPs</span>
+              </button>
+              <button id="btn-bulk-clear-selection" class="bulk-action-btn" type="button" title="Deselect all">Deselect All</button>
+            </div>
+          </div>
+
           <div id="fleet-loading" class="fleet-loading-state">
             <div class="spinner"></div>
             <p>Scanning machines and gathering telemetry...</p>
@@ -263,6 +297,7 @@
             <table class="fleet-data-table">
               <thead>
                 <tr>
+                  <th style="width: 32px;"><input type="checkbox" id="table-select-all-header" title="Select all visible machines" /></th>
                   <th data-sort="name">Machine Name</th>
                   <th data-sort="provisioner">Provider / Origin</th>
                   <th data-sort="os">OS &amp; Arch</th>

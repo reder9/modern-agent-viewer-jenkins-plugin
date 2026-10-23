@@ -62,6 +62,30 @@ Automatically inspects runtime characteristics, cloud descriptors, and class hie
 
 ---
 
+### 7. Fleet Inventory Export (CSV & JSON)
+- Client-Side Filter-Aware Export: 1-click export of current filtered/sorted agent views to CSV or structured JSON.
+- Telemetry Included: Machine name, status, cloud provider, OS and architecture, IP address, hostname, used/total storage, uptime, connected session duration, active/total executors, and labels.
+- Automated API Endpoint: Direct GET `/agents/exportCsv` endpoint for external scripts, audit pipelines, and metrics aggregators.
+
+---
+
+### 8. Bulk Fleet Operations & Floating Action Bar
+- Multi-Select Support: Checkboxes on both Card Matrix and High-Density Table headers and rows.
+- Floating Action Bar: Dynamically appears when one or more agents are selected:
+  - Take Selected Offline: Bulk mark selected agents for maintenance with a single confirmation modal and reason.
+  - Bring Selected Online: Bulk return selected agents to service.
+  - Copy Selected IPs: Copy newline-delimited IP addresses of all selected agents to the clipboard.
+  - Deselect All: One-click clear of active fleet selection.
+- One-Click Launch / Reconnect: Direct action button to trigger slave agent launch directly from card and table toolbars for disconnected nodes.
+
+---
+
+### 9. Jenkins Internationalization (i18n)
+- Complies with Jenkins core localization standards via `Messages.properties`.
+- Ready for community translations into multiple languages.
+
+---
+
 ## Configuration as Code (JCasC)
 
 ```yaml

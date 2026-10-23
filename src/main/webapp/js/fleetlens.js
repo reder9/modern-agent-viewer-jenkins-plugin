@@ -33,7 +33,8 @@
     refreshInterval: INITIAL_REFRESH,
     timerId: null,
     lastUpdated: Date.now(),
-    isLoading: true
+    isLoading: true,
+    selectedAgents: new Set()
   };
 
   // DOM Elements
@@ -43,6 +44,7 @@
     cardsView: document.getElementById('fleet-cards-view'),
     tableView: document.getElementById('fleet-table-view'),
     tableBody: document.getElementById('fleet-table-body'),
+    tableSelectAllHeader: document.getElementById('table-select-all-header'),
     searchInput: document.getElementById('fleet-search'),
     searchClear: document.getElementById('search-clear'),
     filterStatus: document.getElementById('filter-status'),
@@ -54,6 +56,15 @@
     selectRefreshRate: document.getElementById('select-refresh-rate'),
     lastUpdatedText: document.getElementById('last-updated-text'),
     btnResetFilters: document.getElementById('btn-reset-filters'),
+    // Export and Bulk Actions
+    btnExportCsv: document.getElementById('btn-export-csv'),
+    btnExportJson: document.getElementById('btn-export-json'),
+    bulkActionsBar: document.getElementById('bulk-actions-bar'),
+    bulkSelectedCount: document.getElementById('bulk-selected-count'),
+    btnBulkOffline: document.getElementById('btn-bulk-offline'),
+    btnBulkOnline: document.getElementById('btn-bulk-online'),
+    btnBulkCopyIps: document.getElementById('btn-bulk-copy-ips'),
+    btnBulkClearSelection: document.getElementById('btn-bulk-clear-selection'),
     // Queue Inspector Elements
     queuePanel: document.getElementById('fleet-queue-panel'),
     queueBadgeCount: document.getElementById('queue-badge-count'),
@@ -268,6 +279,51 @@
     if (el.btnResetFilters) {
       el.btnResetFilters.addEventListener('click', function() {
         resetFilters();
+      });
+    }
+
+    // Export Handlers
+    if (el.btnExportCsv) {
+      el.btnExportCsv.addEventListener('click', handleExportCsv);
+    }
+    if (el.btnExportJson) {
+      el.btnExportJson.addEventListener('click', handleExportJson);
+    }
+
+    // Table Select All header checkbox
+    if (el.tableSelectAllHeader) {
+      el.tableSelectAllHeader.addEventListener('change', function() {
+        const checked = el.tableSelectAllHeader.checked;
+        const visible = getFilteredAndSortedAgents().filter(a => a.name !== '(built-in)');
+        if (checked) {
+          visible.forEach(a => state.selectedAgents.add(a.name));
+        } else {
+          visible.forEach(a => state.selectedAgents.delete(a.name));
+        }
+        document.querySelectorAll('.agent-select-checkbox').forEach(cb => {
+          cb.checked = checked;
+        });
+        updateBulkBar();
+      });
+    }
+
+    // Bulk Operation Buttons
+    if (el.btnBulkOffline) {
+      el.btnBulkOffline.addEventListener('click', handleBulkOffline);
+    }
+    if (el.btnBulkOnline) {
+      el.btnBulkOnline.addEventListener('click', handleBulkOnline);
+    }
+    if (el.btnBulkCopyIps) {
+      el.btnBulkCopyIps.addEventListener('click', handleBulkCopyIps);
+    }
+    if (el.btnBulkClearSelection) {
+      el.btnBulkClearSelection.addEventListener('click', function() {
+        state.selectedAgents.clear();
+        document.querySelectorAll('.agent-select-checkbox').forEach(cb => {
+          cb.checked = false;
+        });
+        updateBulkBar();
       });
     }
 
@@ -665,6 +721,7 @@
         renderTable(filtered);
       }
     }
+    updateBulkBar();
   }
 
   // Render Live Queue Inspector
@@ -866,6 +923,9 @@
         <div class="card-top">
           <div class="agent-title-block">
             <div style="display: flex; align-items: center; gap: 6px;">
+              ${agent.name !== '(built-in)' ? `
+                <input type="checkbox" class="agent-select-checkbox card-select-checkbox" data-agent="${escapeHtml(agent.name)}" ${state.selectedAgents.has(agent.name) ? 'checked' : ''} aria-label="Select ${escapeHtml(agent.name)}" />
+              ` : ''}
               <a href="${computerUrl}" class="agent-name-link">
                 <span class="status-indicator ${statusDotClass}"></span>
                 ${escapeHtml(agent.displayName || agent.name)}
@@ -956,6 +1016,12 @@
         <div class="card-footer">
           <!-- Cluster 1: Operational & Diagnostic Tools -->
           <div class="card-footer-cluster tools-cluster" title="Operational &amp; Diagnostic Tools">
+            ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
+              <a href="${computerUrl}/launchSlaveAgent" class="card-cluster-btn" title="Launch / reconnect agent" style="color: var(--fl-accent-blue);">
+                <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Launch</span>
+              </a>
+            ` : ''}
             <button class="card-cluster-btn btn-connect-agent" data-agent="${escapeHtml(agent.name)}" title="SSH &amp; CLI Connect Commands" type="button">
               <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
               <span>Connect</span>
@@ -1034,6 +1100,11 @@
       const activeExec = agent.executors.filter(e => e.busy).length;
 
       tr.innerHTML = `
+        <td style="width: 32px; text-align: center;">
+          ${agent.name !== '(built-in)' ? `
+            <input type="checkbox" class="agent-select-checkbox table-select-checkbox" data-agent="${escapeHtml(agent.name)}" ${state.selectedAgents.has(agent.name) ? 'checked' : ''} aria-label="Select ${escapeHtml(agent.name)}" />
+          ` : ''}
+        </td>
         <td>
           <div style="display: flex; align-items: center; gap: 6px;">
             <a href="${computerUrl}" class="agent-name-link">
@@ -1080,11 +1151,14 @@
         <td>${escapeHtml(hostUptime)}</td>
         <td>${activeExec} / ${agent.numExecutors}</td>
         <td>
+          ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
+            <a href="${computerUrl}/launchSlaveAgent" class="footer-btn" style="padding: 2px 6px; margin-right: 4px; color: var(--fl-accent-blue);" title="Launch / reconnect agent">Launch</a>
+          ` : ''}
           <button class="footer-btn btn-connect-agent" data-agent="${escapeHtml(agent.name)}" style="padding: 2px 6px; margin-right: 4px;" title="Connect / SSH">Connect</button>
           ${agent.canConfigure ? `
             <button class="footer-btn btn-terminal-agent" data-agent="${escapeHtml(agent.name)}" style="padding: 2px 6px; margin-right: 4px;" title="Diagnostic Console">Console</button>
           ` : ''}
-          <a href="${computerUrl}/log" class="footer-btn" style="padding: 2px 6px;">Log</a>
+          <a href="${computerUrl}/log" class="footer-btn" style="padding: 2px 6px; margin-right: 4px;">Log</a>
           ${agent.canConfigure && agent.name !== '(built-in)' ? `
             ${agent.isTemporarilyOffline ?
               `<button class="footer-btn btn-toggle-online" style="padding: 2px 6px;" data-action="online" data-name="${escapeHtml(agent.name)}">Online</button>` :
@@ -1173,6 +1247,24 @@
             }, 1800);
           }
         });
+      });
+    });
+
+    // Agent selection checkbox
+    parent.querySelectorAll('.agent-select-checkbox').forEach(cb => {
+      cb.addEventListener('change', function(e) {
+        e.stopPropagation();
+        const name = cb.getAttribute('data-agent');
+        if (!name) return;
+        if (cb.checked) {
+          state.selectedAgents.add(name);
+        } else {
+          state.selectedAgents.delete(name);
+        }
+        document.querySelectorAll(`.agent-select-checkbox[data-agent="${CSS.escape(name)}"]`).forEach(c => {
+          c.checked = cb.checked;
+        });
+        updateBulkBar();
       });
     });
 
@@ -1791,17 +1883,22 @@
   // Modal Dialogs
   function openModal(agentName, targetOffline) {
     if (!el.modalOffline) return;
+    const isBulk = agentName && agentName.includes(',');
+    const names = isBulk ? agentName.split(',').filter(Boolean) : [agentName];
+
     el.modalAgentName.value = agentName;
     el.modalTargetState.value = targetOffline ? 'true' : 'false';
 
     if (targetOffline) {
-      el.modalTitle.textContent = 'Take ' + agentName + ' Offline';
-      el.modalDesc.textContent = 'Mark this machine temporarily offline. Running jobs will finish, but no new builds will be scheduled on it:';
+      el.modalTitle.textContent = isBulk ? ('Take ' + names.length + ' Agents Offline') : ('Take ' + agentName + ' Offline');
+      el.modalDesc.textContent = isBulk ?
+        ('Mark these ' + names.length + ' selected machines temporarily offline. Running jobs will finish, but no new builds will be scheduled on them:') :
+        'Mark this machine temporarily offline. Running jobs will finish, but no new builds will be scheduled on it:';
       if (el.modalReasonContainer) el.modalReasonContainer.style.display = 'flex';
       if (el.modalReason) {
         el.modalReason.value = 'Scheduled maintenance and health inspection';
       }
-      el.modalConfirmBtn.textContent = 'Take Offline';
+      el.modalConfirmBtn.textContent = isBulk ? ('Take ' + names.length + ' Offline') : 'Take Offline';
       el.modalConfirmBtn.className = 'jenkins-button jenkins-button--primary';
       if (el.modalHeaderIcon) {
         el.modalHeaderIcon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>';
@@ -1814,10 +1911,12 @@
         }
       }, 50);
     } else {
-      el.modalTitle.textContent = 'Bring ' + agentName + ' Online';
-      el.modalDesc.textContent = 'Clear maintenance offline status and allow Jenkins to resume dispatching queued builds to this machine.';
+      el.modalTitle.textContent = isBulk ? ('Bring ' + names.length + ' Agents Online') : ('Bring ' + agentName + ' Online');
+      el.modalDesc.textContent = isBulk ?
+        ('Clear maintenance offline status on these ' + names.length + ' machines and allow Jenkins to resume dispatching builds to them.') :
+        'Clear maintenance offline status and allow Jenkins to resume dispatching queued builds to this machine.';
       if (el.modalReasonContainer) el.modalReasonContainer.style.display = 'none';
-      el.modalConfirmBtn.textContent = 'Bring Online';
+      el.modalConfirmBtn.textContent = isBulk ? ('Bring ' + names.length + ' Online') : 'Bring Online';
       el.modalConfirmBtn.className = 'jenkins-button jenkins-button--primary';
       if (el.modalHeaderIcon) {
         el.modalHeaderIcon.innerHTML = '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>';
@@ -1835,15 +1934,19 @@
   }
 
   function handleModalConfirm() {
-    const name = el.modalAgentName.value;
+    const rawNames = el.modalAgentName.value;
     const isOffline = el.modalTargetState.value === 'true';
     const reason = el.modalReason ? el.modalReason.value.trim() : '';
 
+    const isBulk = rawNames && rawNames.includes(',');
     el.modalConfirmBtn.disabled = true;
     el.modalConfirmBtn.textContent = isOffline ? 'Taking Offline...' : 'Bringing Online...';
 
+    const endpoint = isBulk ? (ROOT_URL + '/agents/bulkToggleOffline') : (ROOT_URL + '/agents/toggleOffline');
+    const paramName = isBulk ? 'names' : 'name';
+
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', ROOT_URL + '/agents/toggleOffline', true);
+    xhr.open('POST', endpoint, true);
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 
     // Attach crumb if present in Jenkins
@@ -1851,13 +1954,17 @@
       xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
     }
 
-    const payload = 'name=' + encodeURIComponent(name) +
+    const payload = paramName + '=' + encodeURIComponent(rawNames) +
                     '&offline=' + isOffline +
                     '&reason=' + encodeURIComponent(reason);
 
     xhr.onload = function() {
       el.modalConfirmBtn.disabled = false;
       closeModal();
+      if (isBulk) {
+        state.selectedAgents.clear();
+        updateBulkBar();
+      }
       fetchFleetData();
     };
 
@@ -1949,6 +2056,149 @@
     } catch (err) {
       if (onError) onError(err);
     }
+  }
+
+  // Bulk Selection and Floating Bar
+  function updateBulkBar() {
+    if (!el.bulkActionsBar || !el.bulkSelectedCount) return;
+    const count = state.selectedAgents.size;
+    if (count > 0) {
+      el.bulkActionsBar.style.display = 'flex';
+      el.bulkSelectedCount.textContent = count + (count === 1 ? ' machine selected' : ' machines selected');
+    } else {
+      el.bulkActionsBar.style.display = 'none';
+    }
+    if (el.tableSelectAllHeader) {
+      const visible = getFilteredAndSortedAgents().filter(a => a.name !== '(built-in)');
+      el.tableSelectAllHeader.checked = visible.length > 0 && visible.every(a => state.selectedAgents.has(a.name));
+    }
+  }
+
+  function handleBulkOffline() {
+    const names = Array.from(state.selectedAgents).filter(n => n !== '(built-in)');
+    if (names.length === 0) return;
+    openModal(names.join(','), true);
+  }
+
+  function handleBulkOnline() {
+    const names = Array.from(state.selectedAgents).filter(n => n !== '(built-in)');
+    if (names.length === 0) return;
+    openModal(names.join(','), false);
+  }
+
+  function handleBulkCopyIps() {
+    const names = Array.from(state.selectedAgents);
+    if (names.length === 0) return;
+    const ips = [];
+    names.forEach(name => {
+      const agent = state.agents.find(a => a.name === name);
+      if (agent && agent.ipAddress) {
+        ips.push(agent.ipAddress);
+      }
+    });
+
+    if (ips.length === 0) {
+      alert('None of the selected agents have an IP address available.');
+      return;
+    }
+
+    const ipText = ips.join('\n');
+    copyToClipboard(ipText, function() {
+      if (el.btnBulkCopyIps) {
+        const span = el.btnBulkCopyIps.querySelector('span');
+        if (span) {
+          const old = span.textContent;
+          span.textContent = 'Copied ' + ips.length + ' IPs!';
+          setTimeout(() => { span.textContent = old; }, 2000);
+        }
+      }
+    });
+  }
+
+  // Export Inventory Functions
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportCsv() {
+    const agents = getFilteredAndSortedAgents();
+    const headers = [
+      'Name',
+      'Status',
+      'Provider',
+      'OS',
+      'Architecture',
+      'IP Address',
+      'Host Name',
+      'Storage Used',
+      'Storage Total',
+      'Storage Percent',
+      'Session Connected',
+      'Host Uptime',
+      'Executors Active',
+      'Executors Total',
+      'Labels'
+    ];
+
+    function escapeCsvCell(val) {
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+
+    const rows = agents.map(a => {
+      const storage = a.storage || {};
+      const tm = a.timeMetrics || {};
+      const activeExec = (a.executors || []).filter(e => e.busy).length;
+      const totalExec = a.numExecutors || 0;
+      const labels = (a.labels || []).join(' ');
+
+      return [
+        escapeCsvCell(a.name),
+        escapeCsvCell(a.status),
+        escapeCsvCell((a.provisioner && a.provisioner.displayName) || 'Static'),
+        escapeCsvCell((a.os && a.os.prettyName) || 'Unknown'),
+        escapeCsvCell((a.os && a.os.arch) || ''),
+        escapeCsvCell(a.ipAddress || ''),
+        escapeCsvCell(a.hostName || ''),
+        escapeCsvCell(storage.usedHuman || ''),
+        escapeCsvCell(storage.totalHuman || ''),
+        escapeCsvCell(storage.percentUsed >= 0 ? storage.percentUsed + '%' : ''),
+        escapeCsvCell(tm.connectedDurationHuman || ''),
+        escapeCsvCell(tm.hostUptimeHuman || ''),
+        activeExec,
+        totalExec,
+        escapeCsvCell(labels)
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    downloadBlob(blob, 'jenkins-fleet-inventory-' + timestamp + '.csv');
+  }
+
+  function handleExportJson() {
+    const agents = getFilteredAndSortedAgents();
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      agentCount: agents.length,
+      agents: agents
+    };
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    downloadBlob(blob, 'jenkins-fleet-inventory-' + timestamp + '.json');
   }
 
   function escapeHtml(str) {
