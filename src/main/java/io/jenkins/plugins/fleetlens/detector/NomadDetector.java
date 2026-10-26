@@ -8,12 +8,17 @@ import io.jenkins.plugins.fleetlens.api.dto.ProvisionerDto;
 import java.lang.reflect.Method;
 import java.util.Locale;
 
+/**
+ * Detects agents provisioned and managed by HashiCorp Nomad (nomad-plugin).
+ * Prioritized higher than generic Docker detector (92 vs 70) to ensure container tasks
+ * orchestrated by Nomad are correctly attributed to HashiCorp Nomad.
+ */
 @Extension
 public class NomadDetector implements AgentProvisionerDetector {
 
     @Override
     public int getPriority() {
-        return 80;
+        return 92;
     }
 
     @Override
@@ -23,12 +28,28 @@ public class NomadDetector implements AgentProvisionerDetector {
             if (compClass.contains("nomad")) {
                 return true;
             }
+            String compName = computer.getName().toLowerCase(Locale.ROOT);
+            if (compName.contains("nomad")) {
+                return true;
+            }
+            if (hasMethodValue(computer, "getNomadCloud")) {
+                return true;
+            }
         }
+
         if (node != null) {
             String className = node.getClass().getName().toLowerCase(Locale.ROOT);
             if (className.contains("nomad")) {
                 return true;
             }
+
+            // Reflective checks on NomadWorker / NomadSlave methods
+            if (hasMethodValue(node, "getNomadCloud")
+                    || hasMethodValue(node, "getNomadJob")
+                    || hasMethodValue(node, "getSlaveTemplate")) {
+                return true;
+            }
+
             String nodeDesc = node.getNodeDescription();
             if (nodeDesc != null) {
                 String descLower = nodeDesc.toLowerCase(Locale.ROOT);
@@ -36,13 +57,15 @@ public class NomadDetector implements AgentProvisionerDetector {
                     return true;
                 }
             }
+
             String nodeName = node.getNodeName().toLowerCase(Locale.ROOT);
-            if (nodeName.startsWith("nomad-")) {
+            if (nodeName.contains("nomad")) {
                 return true;
             }
+
             for (Label l : node.getAssignedLabels()) {
                 String lname = l.getName().toLowerCase(Locale.ROOT);
-                if (lname.equals("nomad") || lname.contains("nomad-")) {
+                if (lname.equals("nomad") || lname.contains("nomad-") || lname.contains("-nomad")) {
                     return true;
                 }
             }
@@ -61,11 +84,30 @@ public class NomadDetector implements AgentProvisionerDetector {
             tryReflectiveMethod(node, "getDatacenter", "Datacenter", dto);
             tryReflectiveMethod(node, "getNomadCloud", "Nomad Cloud", dto);
             tryReflectiveMethod(node, "getSlaveTemplate", "Template", dto);
+            tryReflectiveMethod(node, "getAllocationId", "Allocation ID", dto);
+            tryReflectiveMethod(node, "getAllocId", "Allocation ID", dto);
+
+            String desc = node.getNodeDescription() != null ? node.getNodeDescription().toLowerCase(Locale.ROOT) : "";
+            String name = node.getNodeName().toLowerCase(Locale.ROOT);
+            if (desc.contains("docker") || name.contains("docker") || name.contains("container")) {
+                dto.addDetail("Driver", "Docker (via Nomad)");
+            }
         }
         if (computer != null) {
             tryReflectiveMethod(computer, "getNomadCloud", "Nomad Cloud", dto);
+            tryReflectiveMethod(computer, "getAllocationId", "Allocation ID", dto);
         }
         return dto;
+    }
+
+    private boolean hasMethodValue(Object target, String methodName) {
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            Object res = m.invoke(target);
+            return res != null && !String.valueOf(res).trim().isEmpty();
+        } catch (ReflectiveOperationException | SecurityException ignored) {
+            return false;
+        }
     }
 
     private void tryReflectiveMethod(Object target, String methodName, String detailKey, ProvisionerDto dto) {

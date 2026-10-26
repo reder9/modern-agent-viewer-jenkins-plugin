@@ -1346,7 +1346,109 @@
       return commands;
     }
 
-    if (provId === 'docker' || provId === 'swarm' || host.includes('docker') || agent.name.includes('docker')) {
+    if (provId === 'vsphere') {
+      const vmName = details['VM Name'] || agent.name;
+      const vcenterHost = details['Cloud'] || details['vSphere Cloud'] || '<vcenter-server>';
+      if (osFam === 'WINDOWS') {
+        commands.push({
+          title: 'Remote Desktop (RDP)',
+          desc: 'Launch Windows Remote Desktop connection directly to ' + targetHost + ':',
+          cmd: 'mstsc /v:' + targetHost
+        });
+        commands.push({
+          title: 'PowerShell Remoting (WinRM)',
+          desc: 'Open remote interactive PowerShell session to ' + targetHost + ':',
+          cmd: 'Enter-PSSession -ComputerName ' + targetHost + ' -Credential (Get-Credential)'
+        });
+        commands.push({
+          title: 'Network Port Connectivity Check (RDP/WinRM)',
+          desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + targetHost + ':',
+          cmd: 'Test-NetConnection -ComputerName ' + targetHost + ' -Port 3389'
+        });
+        if (ip || host) {
+          commands.push({
+            title: 'OpenSSH for Windows',
+            desc: 'Direct SSH session to Windows guest (if OpenSSH feature enabled):',
+            cmd: 'ssh Administrator@' + targetHost
+          });
+        }
+      } else {
+        const sshUser = 'jenkins';
+        commands.push({
+          title: 'Direct SSH Session',
+          desc: 'Open secure terminal session to vSphere VM at ' + targetHost + ':',
+          cmd: 'ssh ' + sshUser + '@' + targetHost
+        });
+        commands.push({
+          title: 'SSH with Private Key',
+          desc: 'Connect with identity key pair:',
+          cmd: 'ssh -i ~/.ssh/id_rsa ' + sshUser + '@' + targetHost
+        });
+        commands.push({
+          title: 'SCP File Transfer',
+          desc: 'Transfer files to VM workspace or temp directory:',
+          cmd: 'scp ./build-artifact.tar.gz ' + sshUser + '@' + targetHost + ':' + (agent.remoteFs || '/tmp') + '/'
+        });
+      }
+      commands.push({
+        title: 'VMware PowerCLI Guest Status',
+        desc: 'Query VM power state and guest network interfaces via VMware PowerCLI:',
+        cmd: 'Connect-VIServer -Server ' + vcenterHost + '; Get-VM -Name "' + vmName + '" | Select-Object Name, PowerState, NumCpu, MemoryGB, @{N="IP";E={$_.Guest.IPAddress[0]}}'
+      });
+      return commands;
+    }
+
+    if (provId === 'nomad') {
+      const jobName = details['Job Name'] || agent.name;
+      commands.push({
+        title: 'Nomad Allocation Exec',
+        desc: 'Execute interactive shell in the Nomad container or task running job ' + jobName + ':',
+        cmd: 'nomad alloc exec -job ' + jobName + ' /bin/sh'
+      });
+      commands.push({
+        title: 'Nomad Allocation Logs',
+        desc: 'Stream standard output and stderr from Nomad task:',
+        cmd: 'nomad alloc logs -f -job ' + jobName
+      });
+      commands.push({
+        title: 'Nomad Job Status',
+        desc: 'Check job deployment health and task allocation status in Nomad cluster:',
+        cmd: 'nomad job status ' + jobName
+      });
+      if (ip || host) {
+        commands.push({
+          title: 'Direct SSH to Agent Node',
+          desc: 'Connect directly to the host or container IP (' + targetHost + '):',
+          cmd: 'ssh jenkins@' + targetHost
+        });
+      }
+      return commands;
+    }
+
+    if (provId === 'kubernetes' || details['Pod Name'] || details['Namespace']) {
+      const podName = details['Pod Name'] || agent.name;
+      const namespace = details['Namespace'] || 'jenkins';
+      const containerName = details['Container'] || 'jnlp';
+
+      commands.push({
+        title: 'Kubectl Pod Exec',
+        desc: 'Exec interactive terminal into pod ' + podName + ' (namespace: ' + namespace + '):',
+        cmd: 'kubectl exec -it ' + podName + ' -n ' + namespace + ' -c ' + containerName + ' -- /bin/sh'
+      });
+      commands.push({
+        title: 'Kubectl Pod Logs',
+        desc: 'Stream agent remoting container logs:',
+        cmd: 'kubectl logs -f ' + podName + ' -n ' + namespace + ' -c ' + containerName + ' --tail=100'
+      });
+      commands.push({
+        title: 'Kubectl Pod Diagnostics',
+        desc: 'Inspect pod events, resource limits, and lifecycle events:',
+        cmd: 'kubectl describe pod ' + podName + ' -n ' + namespace
+      });
+      return commands;
+    }
+
+    if ((provId === 'docker' || provId === 'swarm') && osFam !== 'WINDOWS') {
       let containerRef = host.replace('.jenkins-net', '').replace(/:\d+$/, '');
       if (!containerRef || containerRef.startsWith('172.') || containerRef.startsWith('10.')) {
         containerRef = agent.name;
@@ -1376,39 +1478,21 @@
       return commands;
     }
 
-    if (provId === 'kubernetes' || details['Pod Name'] || details['Namespace']) {
-      const podName = details['Pod Name'] || agent.name;
-      const namespace = details['Namespace'] || 'jenkins';
-      const containerName = details['Container'] || 'jnlp';
-
-      commands.push({
-        title: 'Kubectl Pod Exec',
-        desc: 'Exec interactive terminal into pod ' + podName + ' (namespace: ' + namespace + '):',
-        cmd: 'kubectl exec -it ' + podName + ' -n ' + namespace + ' -c ' + containerName + ' -- /bin/sh'
-      });
-      commands.push({
-        title: 'Kubectl Pod Logs',
-        desc: 'Stream agent remoting container logs:',
-        cmd: 'kubectl logs -f ' + podName + ' -n ' + namespace + ' -c ' + containerName + ' --tail=100'
-      });
-      commands.push({
-        title: 'Kubectl Pod Diagnostics',
-        desc: 'Inspect pod events, resource limits, and lifecycle events:',
-        cmd: 'kubectl describe pod ' + podName + ' -n ' + namespace
-      });
-      return commands;
-    }
-
     if (osFam === 'WINDOWS') {
+      commands.push({
+        title: 'Remote Desktop (RDP)',
+        desc: 'Launch Windows Remote Desktop connection directly to ' + targetHost + ':',
+        cmd: 'mstsc /v:' + targetHost
+      });
       commands.push({
         title: 'PowerShell Remoting (WinRM)',
         desc: 'Open remote interactive PowerShell session to ' + targetHost + ':',
         cmd: 'Enter-PSSession -ComputerName ' + targetHost + ' -Credential (Get-Credential)'
       });
       commands.push({
-        title: 'Remote Desktop (RDP)',
-        desc: 'Launch Windows Remote Desktop connection directly to ' + targetHost + ':',
-        cmd: 'mstsc /v:' + targetHost
+        title: 'Network Port Connectivity Check (RDP/WinRM)',
+        desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + targetHost + ':',
+        cmd: 'Test-NetConnection -ComputerName ' + targetHost + ' -Port 3389'
       });
       if (ip || host) {
         commands.push({

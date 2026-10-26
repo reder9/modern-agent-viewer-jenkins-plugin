@@ -12,6 +12,7 @@ import io.jenkins.plugins.fleetlens.api.dto.ExecutorSlotDto;
 import io.jenkins.plugins.fleetlens.api.dto.FleetOverviewDto;
 import io.jenkins.plugins.fleetlens.api.dto.ProvisionerDto;
 import io.jenkins.plugins.fleetlens.detector.AgentProvisionerDetector;
+import io.jenkins.plugins.fleetlens.monitoring.AgentNetworkService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentOsDetector;
 import io.jenkins.plugins.fleetlens.monitoring.AgentStorageService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentUptimeService;
@@ -90,47 +91,43 @@ public class FleetLensDataService {
             overview.incrementStatus(agent.getStatus());
         }
 
-        try {
-            Jenkins jenkins = Jenkins.getInstanceOrNull();
-            if (jenkins != null && jenkins.clouds != null) {
-                for (hudson.slaves.Cloud cloud : jenkins.clouds) {
-                    if (cloud == null || cloud.name == null) continue;
-                    String cName = cloud.name.toLowerCase(java.util.Locale.ROOT);
-                    String cls = cloud.getClass().getName().toLowerCase(java.util.Locale.ROOT);
-                    String all = cName + " " + cls;
-                    if (all.contains("ec2") || all.contains("aws")) {
-                        overview.addConfiguredCloud("aws-ec2");
-                    } else if (all.contains("docker")) {
-                        overview.addConfiguredCloud("docker");
-                    } else if (all.contains("kubernetes") || all.contains("k8s")) {
-                        overview.addConfiguredCloud("kubernetes");
-                    } else if (all.contains("azure")) {
-                        overview.addConfiguredCloud("azure");
-                    } else if (all.contains("gcp") || all.contains("gce")) {
-                        overview.addConfiguredCloud("gcp");
-                    } else if (all.contains("proxmox")) {
-                        overview.addConfiguredCloud("proxmox");
-                    } else if (all.contains("vsphere")) {
-                        overview.addConfiguredCloud("vsphere");
-                    } else if (all.contains("openstack")) {
-                        overview.addConfiguredCloud("openstack");
-                    } else if (all.contains("nomad")) {
-                        overview.addConfiguredCloud("nomad");
-                    } else if (all.contains("swarm")) {
-                        overview.addConfiguredCloud("swarm");
-                    } else if (all.contains("oci") || all.contains("oracle")) {
-                        overview.addConfiguredCloud("oci");
-                    } else if (all.contains("digitalocean")) {
-                        overview.addConfiguredCloud("digitalocean");
-                    } else if (all.contains("hetzner")) {
-                        overview.addConfiguredCloud("hetzner");
-                    } else {
-                        overview.addConfiguredCloud("cloud");
-                    }
+        Jenkins jenkins = Jenkins.getInstanceOrNull();
+        if (jenkins != null && jenkins.clouds != null) {
+            for (hudson.slaves.Cloud cloud : jenkins.clouds) {
+                if (cloud == null || cloud.name == null) continue;
+                String cName = cloud.name.toLowerCase(java.util.Locale.ROOT);
+                String cls = cloud.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+                String all = cName + " " + cls;
+                if (all.contains("ec2") || all.contains("aws")) {
+                    overview.addConfiguredCloud("aws-ec2");
+                } else if (all.contains("docker")) {
+                    overview.addConfiguredCloud("docker");
+                } else if (all.contains("kubernetes") || all.contains("k8s")) {
+                    overview.addConfiguredCloud("kubernetes");
+                } else if (all.contains("azure")) {
+                    overview.addConfiguredCloud("azure");
+                } else if (all.contains("gcp") || all.contains("gce")) {
+                    overview.addConfiguredCloud("gcp");
+                } else if (all.contains("proxmox")) {
+                    overview.addConfiguredCloud("proxmox");
+                } else if (all.contains("vsphere")) {
+                    overview.addConfiguredCloud("vsphere");
+                } else if (all.contains("openstack")) {
+                    overview.addConfiguredCloud("openstack");
+                } else if (all.contains("nomad")) {
+                    overview.addConfiguredCloud("nomad");
+                } else if (all.contains("swarm")) {
+                    overview.addConfiguredCloud("swarm");
+                } else if (all.contains("oci") || all.contains("oracle")) {
+                    overview.addConfiguredCloud("oci");
+                } else if (all.contains("digitalocean")) {
+                    overview.addConfiguredCloud("digitalocean");
+                } else if (all.contains("hetzner")) {
+                    overview.addConfiguredCloud("hetzner");
+                } else {
+                    overview.addConfiguredCloud("cloud");
                 }
             }
-        } catch (Exception ignored) {
-            // Jenkins or clouds not accessible
         }
 
         overview.setTotalAgents(total);
@@ -206,15 +203,8 @@ public class FleetLensDataService {
             LOGGER.log(Level.FINE, "Failed to resolve hostname for " + computer.getName(), e);
         }
 
-        String ip = null;
-        if (host != null && !host.trim().isEmpty()) {
-            try {
-                ip = java.net.InetAddress.getByName(host).getHostAddress();
-            } catch (Exception ignored) {
-                // Host resolution fallback
-            }
-        }
-        dto.setIpAddress(ip != null ? ip : host);
+        String ip = AgentNetworkService.resolveIpAddress(computer, node, host);
+        dto.setIpAddress(ip);
         dto.setNumExecutors(computer.getNumExecutors());
         if (node != null) {
             hudson.FilePath rootPath = node.getRootPath();

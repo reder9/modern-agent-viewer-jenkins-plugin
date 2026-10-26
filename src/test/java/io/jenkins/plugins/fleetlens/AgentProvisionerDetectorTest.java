@@ -190,4 +190,38 @@ class AgentProvisionerDetectorTest {
         assertEquals("aws-ecs", ecsDto.getId());
         assertEquals("Amazon ECS / Fargate", ecsDto.getDisplayName());
     }
+
+    @Test
+    void testVSphereLinuxWithDockerLabelClassification(JenkinsRule j) throws Exception {
+        // Linux VM created via VMware vSphere, but with 'docker' label attached for Docker pipelines
+        DumbSlave slave = j.createSlave("vsphere-linux-docker-builder", "docker linux-builder", null);
+        slave.setNodeDescription("VMware vSphere guest VM on esxi-cluster-01");
+
+        ProvisionerDto resolved = AgentProvisionerDetector.resolve(slave.toComputer(), slave);
+        assertNotNull(resolved);
+        assertEquals("vsphere", resolved.getId(), "vSphere agent must be classified as vsphere even when label is 'docker'");
+        assertEquals("VMware vSphere", resolved.getDisplayName());
+    }
+
+    @Test
+    void testNomadRunnerWithDockerWorkloadClassification(JenkinsRule j) throws Exception {
+        // Nomad dynamic batch runner executing docker tasks
+        DumbSlave slave = j.createSlave("nomad-docker-runner-01", "nomad docker-pipeline", null);
+        slave.setNodeDescription("HashiCorp Nomad dynamic batch runner");
+
+        ProvisionerDto resolved = AgentProvisionerDetector.resolve(slave.toComputer(), slave);
+        assertNotNull(resolved);
+        assertEquals("nomad", resolved.getId(), "Nomad agent must be classified as nomad even when node name/labels include docker");
+        assertEquals("HashiCorp Nomad", resolved.getDisplayName());
+    }
+
+    @Test
+    void testGenuineDockerAgentClassification(JenkinsRule j) throws Exception {
+        DumbSlave slave = j.createSlave("docker-worker-42", "docker", null);
+        slave.setNodeDescription("Docker container agent provisioned by docker-plugin");
+
+        ProvisionerDto resolved = AgentProvisionerDetector.resolve(slave.toComputer(), slave);
+        assertNotNull(resolved);
+        assertEquals("docker", resolved.getId(), "Genuine Docker container must be classified as docker");
+    }
 }

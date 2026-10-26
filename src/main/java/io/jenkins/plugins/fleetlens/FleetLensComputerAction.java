@@ -44,7 +44,7 @@ public class FleetLensComputerAction implements Action {
     public void doIndex(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
         Jenkins.get().checkPermission(Jenkins.READ);
         String compUrl = computer.getUrl();
-        if (compUrl == null || compUrl.isEmpty()) {
+        if (compUrl.isEmpty()) {
             String rawName = computer.getName();
             compUrl = "computer/" + (rawName.isEmpty() ? "(built-in)" : rawName) + "/";
         }

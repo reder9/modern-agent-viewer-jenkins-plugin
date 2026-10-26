@@ -55,9 +55,7 @@ public class FleetJsonSerializer {
         json.put("statusCounts", statusCounts);
 
         JSONArray clouds = new JSONArray();
-        if (overview.getConfiguredClouds() != null) {
-            clouds.addAll(overview.getConfiguredClouds());
-        }
+        clouds.addAll(overview.getConfiguredClouds());
         json.put("configuredClouds", clouds);
 
         return json;

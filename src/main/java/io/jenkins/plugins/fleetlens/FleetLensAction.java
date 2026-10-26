@@ -125,9 +125,9 @@ public class FleetLensAction implements RootAction {
                 String storagePercent = (a.getStorage() != null && a.getStorage().getPercentUsed() >= 0) ? (a.getStorage().getPercentUsed() + "%") : "";
                 String sessionConn = a.getTimeMetrics() != null ? csvEscape(a.getTimeMetrics().getConnectedDurationHuman()) : "";
                 String hostUptime = a.getTimeMetrics() != null ? csvEscape(a.getTimeMetrics().getHostUptimeHuman()) : "";
-                long execActive = a.getExecutors() != null ? a.getExecutors().stream().filter(io.jenkins.plugins.fleetlens.api.dto.ExecutorSlotDto::isBusy).count() : 0;
+                long execActive = a.getExecutors().stream().filter(io.jenkins.plugins.fleetlens.api.dto.ExecutorSlotDto::isBusy).count();
                 int execTotal = a.getNumExecutors();
-                String labels = a.getLabels() != null ? csvEscape(String.join(" ", a.getLabels())) : "";
+                String labels = csvEscape(String.join(" ", a.getLabels()));
 
                 writer.println(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%s",
                         name, status, prov, os, arch, ip, storageUsed, storageTotal, storagePercent, sessionConn, hostUptime, execActive, execTotal, labels));

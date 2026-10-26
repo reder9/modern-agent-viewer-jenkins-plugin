@@ -12,7 +12,7 @@ public class KubernetesDetector implements AgentProvisionerDetector {
 
     @Override
     public int getPriority() {
-        return 90;
+        return 95;
     }
 
     @Override
