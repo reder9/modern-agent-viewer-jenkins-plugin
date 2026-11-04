@@ -13,6 +13,51 @@
   const INITIAL_VIEW = appEl.getAttribute('data-default-view') || 'cards';
   const INITIAL_REFRESH = parseInt(appEl.getAttribute('data-refresh-interval') || '15', 10);
 
+  // Crumb Resolver for Jenkins CSRF Protection
+  function getCrumb() {
+    if (window.crumb && window.crumb.fieldName && window.crumb.value) {
+      return { header: window.crumb.fieldName, value: window.crumb.value };
+    }
+    const head = document.head;
+    if (head) {
+      const header = head.getAttribute('data-crumb-header');
+      const value = head.getAttribute('data-crumb-value');
+      if (header && value) {
+        return { header: header, value: value };
+      }
+    }
+    return null;
+  }
+
+  // Styled Theme-Matched Toast Notification System (Zero Native Alerts)
+  function showToast(message, type) {
+    let container = document.getElementById('fleetlens-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'fleetlens-toast-container';
+      container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    const isError = type === 'error';
+    const bg = isError ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.95)';
+    const border = isError ? '#ef4444' : '#3b82f6';
+    toast.style.cssText = 'pointer-events: auto; background: ' + bg + '; color: #ffffff; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; border: 1px solid ' + border + '; box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 8px; transition: all 0.25s ease; opacity: 0; transform: translateY(10px);';
+    toast.innerHTML = (isError ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>') + '<span>' + escapeHtml(message) + '</span>';
+    container.appendChild(toast);
+    requestAnimationFrame(function() {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+    });
+    setTimeout(function() {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px)';
+      setTimeout(function() {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, 3500);
+  }
+
   // Application State
   const state = {
     agents: [],
@@ -861,15 +906,16 @@
     xhr.open('POST', ROOT_URL + '/agents/cancelQueue', true);
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 
-    if (window.crumb && window.crumb.fieldName && window.crumb.value) {
-      xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
+    const crumb = getCrumb();
+    if (crumb) {
+      xhr.setRequestHeader(crumb.header, crumb.value);
     }
 
     xhr.onload = function() {
       fetchFleetData();
     };
     xhr.onerror = function() {
-      alert('Error canceling queue item');
+      showToast('Error canceling queue item', 'error');
     };
     xhr.send('id=' + encodeURIComponent(itemId));
   }
@@ -1016,7 +1062,7 @@
         <div class="card-footer">
           <!-- Cluster 1: Operational & Diagnostic Tools -->
           <div class="card-footer-cluster tools-cluster" title="Operational &amp; Diagnostic Tools">
-            ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
+            ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.isLaunchSupported && agent.name !== '(built-in)' ? `
               <button class="card-cluster-btn btn-launch-agent" data-url="${computerUrl}/launchSlaveAgent" title="Launch / reconnect agent" type="button">
                 <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 <span>Launch</span>
@@ -1151,7 +1197,7 @@
         <td>${escapeHtml(hostUptime)}</td>
         <td>${activeExec} / ${agent.numExecutors}</td>
         <td>
-          ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
+          ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.isLaunchSupported && agent.name !== '(built-in)' ? `
             <button class="footer-btn btn-launch-agent" data-url="${computerUrl}/launchSlaveAgent" style="padding: 2px 6px; margin-right: 4px;" title="Launch / reconnect agent" type="button">Launch</button>
           ` : ''}
           <button class="footer-btn btn-connect-agent" data-agent="${escapeHtml(agent.name)}" style="padding: 2px 6px; margin-right: 4px;" title="Connect / SSH">Connect</button>
@@ -1215,19 +1261,22 @@
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST', launchUrl, true);
-        if (window.crumb && window.crumb.fieldName && window.crumb.value) {
-          xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
+        const crumb = getCrumb();
+        if (crumb) {
+          xhr.setRequestHeader(crumb.header, crumb.value);
         }
         xhr.onload = function() {
           setTimeout(function() {
             btn.innerHTML = originalHtml;
             btn.style.pointerEvents = '';
+            showToast('Agent launch command initiated', 'info');
             fetchFleetData();
           }, 1500);
         };
         xhr.onerror = function() {
           btn.innerHTML = originalHtml;
           btn.style.pointerEvents = '';
+          showToast('Failed to initiate agent launch', 'error');
           fetchFleetData();
         };
         xhr.send();
@@ -1924,8 +1973,9 @@
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 
     // Attach crumb if present in Jenkins
-    if (window.crumb && window.crumb.fieldName && window.crumb.value) {
-      xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
+    const crumb = getCrumb();
+    if (crumb) {
+      xhr.setRequestHeader(crumb.header, crumb.value);
     }
 
     const payload = 'name=' + encodeURIComponent(state.activeTerminalAgent) +
@@ -2067,8 +2117,9 @@
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
 
     // Attach crumb if present in Jenkins
-    if (window.crumb && window.crumb.fieldName && window.crumb.value) {
-      xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
+    const crumb = getCrumb();
+    if (crumb) {
+      xhr.setRequestHeader(crumb.header, crumb.value);
     }
 
     const payload = paramName + '=' + encodeURIComponent(rawNames) +
@@ -2087,7 +2138,7 @@
 
     xhr.onerror = function() {
       el.modalConfirmBtn.disabled = false;
-      alert('Error updating agent state');
+      showToast('Error updating agent state', 'error');
       closeModal();
     };
 
@@ -2216,7 +2267,7 @@
     });
 
     if (ips.length === 0) {
-      alert('None of the selected agents have an IP address available.');
+      showToast('None of the selected agents have an IP address available.', 'error');
       return;
     }
 

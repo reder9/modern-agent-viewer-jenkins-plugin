@@ -28,4 +28,20 @@ class AgentStorageAndUptimeTest {
         assertEquals("3h 15m", AgentUptimeService.formatDuration(3 * 3600 * 1000 + 15 * 60 * 1000));
         assertEquals("2d 4h", AgentUptimeService.formatDuration(2 * 86400 * 1000 + 4 * 3600 * 1000));
     }
+
+    @Test
+    void testLaunchSupportedDtoAndSerialization() {
+        io.jenkins.plugins.fleetlens.api.dto.AgentDto dto = new io.jenkins.plugins.fleetlens.api.dto.AgentDto();
+        assertFalse(dto.isLaunchSupported());
+
+        dto.setLaunchSupported(true);
+        assertTrue(dto.isLaunchSupported());
+
+        net.sf.json.JSONObject json = io.jenkins.plugins.fleetlens.api.FleetJsonSerializer.serializeAgent(dto, true);
+        assertTrue(json.getBoolean("isLaunchSupported"));
+
+        dto.setLaunchSupported(false);
+        json = io.jenkins.plugins.fleetlens.api.FleetJsonSerializer.serializeAgent(dto, true);
+        assertFalse(json.getBoolean("isLaunchSupported"));
+    }
 }

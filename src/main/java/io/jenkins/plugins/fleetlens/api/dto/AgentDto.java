@@ -21,6 +21,7 @@ public class AgentDto implements Serializable {
     private boolean idle;
     private boolean connecting;
     private boolean temporarilyOffline;
+    private boolean launchSupported;
     private String offlineCause;
     private String offlineCauseReason;
 
@@ -110,6 +111,14 @@ public class AgentDto implements Serializable {
 
     public void setTemporarilyOffline(boolean temporarilyOffline) {
         this.temporarilyOffline = temporarilyOffline;
+    }
+
+    public boolean isLaunchSupported() {
+        return launchSupported;
+    }
+
+    public void setLaunchSupported(boolean launchSupported) {
+        this.launchSupported = launchSupported;
     }
 
     public String getOfflineCause() {

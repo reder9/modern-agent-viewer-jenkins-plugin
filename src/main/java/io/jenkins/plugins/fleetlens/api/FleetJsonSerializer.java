@@ -84,6 +84,7 @@ public class FleetJsonSerializer {
         json.put("isIdle", agent.isIdle());
         json.put("isConnecting", agent.isConnecting());
         json.put("isTemporarilyOffline", agent.isTemporarilyOffline());
+        json.put("isLaunchSupported", agent.isLaunchSupported());
         json.put("offlineCause", agent.getOfflineCause() != null ? agent.getOfflineCause() : "");
         json.put("offlineCauseReason", agent.getOfflineCauseReason() != null ? agent.getOfflineCauseReason() : "");
 

@@ -163,6 +163,7 @@ public class FleetLensDataService {
         dto.setConnecting(isConnecting);
         dto.setTemporarilyOffline(isTemporarilyOffline);
         dto.setIdle(isIdle);
+        dto.setLaunchSupported(computer.isLaunchSupported());
 
         if (isConnecting) {
             dto.setStatus("CONNECTING");
