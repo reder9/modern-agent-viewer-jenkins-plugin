@@ -1329,7 +1329,7 @@ body.theme-dark,
   justify-content: space-between;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap !important;
+  flex-wrap: wrap;
   min-height: 42px;
   box-sizing: border-box;
 }
@@ -1370,6 +1370,30 @@ body.theme-dark,
   line-height: 1 !important;
   transition: all 0.15s ease-in-out;
   box-sizing: border-box !important;
+}
+
+/* Launch Agent Button styling */
+.card-cluster-btn.btn-launch-agent {
+  color: #38bdf8 !important;
+  font-weight: 600 !important;
+}
+
+.card-cluster-btn.btn-launch-agent:hover {
+  background: rgba(56, 189, 248, 0.15) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+}
+
+[data-theme="light"] .card-cluster-btn.btn-launch-agent,
+#fleetlens-app:not(.fleetlens-dark) .card-cluster-btn.btn-launch-agent {
+  color: #0284c7 !important;
+}
+
+[data-theme="light"] .card-cluster-btn.btn-launch-agent:hover,
+#fleetlens-app:not(.fleetlens-dark) .card-cluster-btn.btn-launch-agent:hover {
+  background: rgba(2, 132, 199, 0.1) !important;
+  color: #0369a1 !important;
+  border-color: rgba(2, 132, 199, 0.3) !important;
 }
 
 .card-cluster-btn.btn-icon-only {

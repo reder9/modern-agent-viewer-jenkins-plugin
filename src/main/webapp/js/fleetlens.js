@@ -1017,16 +1017,16 @@
           <!-- Cluster 1: Operational & Diagnostic Tools -->
           <div class="card-footer-cluster tools-cluster" title="Operational &amp; Diagnostic Tools">
             ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
-              <a href="${computerUrl}/launchSlaveAgent" class="card-cluster-btn" title="Launch / reconnect agent" style="color: var(--fl-accent-blue);">
+              <button class="card-cluster-btn btn-launch-agent" data-url="${computerUrl}/launchSlaveAgent" title="Launch / reconnect agent" type="button">
                 <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 <span>Launch</span>
-              </a>
+              </button>
             ` : ''}
             <button class="card-cluster-btn btn-connect-agent" data-agent="${escapeHtml(agent.name)}" title="SSH &amp; CLI Connect Commands" type="button">
               <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
               <span>Connect</span>
             </button>
-            ${agent.canConfigure ? `
+            ${agent.canConfigure && agent.isOnline ? `
               <button class="card-cluster-btn btn-terminal-agent" data-agent="${escapeHtml(agent.name)}" title="Agent Diagnostic Console" type="button">
                 <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                 <span>Console</span>
@@ -1047,11 +1047,11 @@
               ${agent.isTemporarilyOffline ?
                 `<button class="card-cluster-btn btn-toggle-online" data-action="online" data-name="${escapeHtml(agent.name)}" title="Bring agent online" type="button">
                    <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                   <span>Bring Online</span>
+                   <span>Online</span>
                  </button>` :
                 `<button class="card-cluster-btn btn-toggle-offline" data-action="offline" data-name="${escapeHtml(agent.name)}" title="Take agent temporarily offline" type="button">
                    <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="3.5" height="16"></rect><rect x="14.5" y="4" width="3.5" height="16"></rect></svg>
-                   <span>Take Offline</span>
+                   <span>Offline</span>
                  </button>`
               }
             ` : ''}
@@ -1152,10 +1152,10 @@
         <td>${activeExec} / ${agent.numExecutors}</td>
         <td>
           ${agent.isOffline && !agent.isTemporarilyOffline && agent.canConfigure && agent.name !== '(built-in)' ? `
-            <a href="${computerUrl}/launchSlaveAgent" class="footer-btn" style="padding: 2px 6px; margin-right: 4px; color: var(--fl-accent-blue);" title="Launch / reconnect agent">Launch</a>
+            <button class="footer-btn btn-launch-agent" data-url="${computerUrl}/launchSlaveAgent" style="padding: 2px 6px; margin-right: 4px;" title="Launch / reconnect agent" type="button">Launch</button>
           ` : ''}
           <button class="footer-btn btn-connect-agent" data-agent="${escapeHtml(agent.name)}" style="padding: 2px 6px; margin-right: 4px;" title="Connect / SSH">Connect</button>
-          ${agent.canConfigure ? `
+          ${agent.canConfigure && agent.isOnline ? `
             <button class="footer-btn btn-terminal-agent" data-agent="${escapeHtml(agent.name)}" style="padding: 2px 6px; margin-right: 4px;" title="Diagnostic Console">Console</button>
           ` : ''}
           <a href="${computerUrl}/log" class="footer-btn" style="padding: 2px 6px; margin-right: 4px;">Log</a>
@@ -1198,6 +1198,39 @@
           if (el.searchClear) el.searchClear.style.display = 'block';
           render();
         }
+      });
+    });
+
+    // Launch agent button
+    parent.querySelectorAll('.btn-launch-agent').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const launchUrl = btn.getAttribute('data-url');
+        if (!launchUrl) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="status-dot-pulse" style="width: 7px; height: 7px; background: currentColor; border-radius: 50%; display: inline-block;"></span><span>Launching...</span>';
+        btn.style.pointerEvents = 'none';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', launchUrl, true);
+        if (window.crumb && window.crumb.fieldName && window.crumb.value) {
+          xhr.setRequestHeader(window.crumb.fieldName, window.crumb.value);
+        }
+        xhr.onload = function() {
+          setTimeout(function() {
+            btn.innerHTML = originalHtml;
+            btn.style.pointerEvents = '';
+            fetchFleetData();
+          }, 1500);
+        };
+        xhr.onerror = function() {
+          btn.innerHTML = originalHtml;
+          btn.style.pointerEvents = '';
+          fetchFleetData();
+        };
+        xhr.send();
       });
     });
 
