@@ -33,12 +33,14 @@ public class FleetRedirectAction implements RootAction {
 
     @GET
     public void doIndex(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException, ServletException {
+        Jenkins.get().checkPermission(Jenkins.READ);
         String queryString = req.getQueryString();
         String target = req.getContextPath() + "/agents" + (queryString != null && !queryString.isEmpty() ? "?" + queryString : "");
         rsp.sendRedirect2(target);
     }
 
     public Object getDynamic(String token, StaplerRequest2 req, StaplerResponse2 rsp) {
+        Jenkins.get().checkPermission(Jenkins.READ);
         return Jenkins.get().getExtensionList(FleetLensAction.class).get(0);
     }
 }

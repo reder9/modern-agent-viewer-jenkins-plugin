@@ -7,6 +7,7 @@ import io.jenkins.plugins.fleetlens.Messages;
 import io.jenkins.plugins.fleetlens.monitoring.AgentStorageService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentUptimeService;
 import jenkins.model.GlobalConfiguration;
+import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundSetter;
@@ -109,6 +110,7 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
     }
 
     public FormValidation doCheckStorageWarningPercent(@QueryParameter int value) {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
         if (value < 10 || value > 99) {
             return FormValidation.error(Messages.GlobalConfiguration_InvalidStorageWarning());
         }
@@ -116,6 +118,7 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
     }
 
     public FormValidation doCheckStorageCriticalPercent(@QueryParameter int value) {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
         if (value < 10 || value > 100) {
             return FormValidation.error(Messages.GlobalConfiguration_InvalidStorageCritical());
         }
