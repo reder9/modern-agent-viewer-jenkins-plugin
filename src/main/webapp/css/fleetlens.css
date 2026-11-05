@@ -851,12 +851,24 @@ body.theme-dark,
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+  min-width: 0;
 }
 
 .agent-title-block {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+}
+
+.agent-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
 }
 
 .agent-name-link {
@@ -864,14 +876,29 @@ body.theme-dark,
   font-weight: 700;
   color: var(--fl-text-main);
   text-decoration: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 .agent-name-link:hover {
   color: var(--fl-brand-blue);
   text-decoration: underline;
+}
+
+.agent-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  display: inline-block;
+}
+
+.fl-copy-icon-btn {
+  flex-shrink: 0;
 }
 
 .status-indicator {
@@ -893,9 +920,12 @@ body.theme-dark,
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.origin-badge {
+.origin-badge,
+.os-badge {
   font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
@@ -903,6 +933,17 @@ body.theme-dark,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.origin-badge .badge-text,
+.os-badge .badge-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge-docker { background: var(--fl-badge-docker-bg); color: var(--fl-badge-docker-text); border: 1px solid var(--fl-badge-docker-border); }
@@ -1151,6 +1192,11 @@ body.theme-dark,
 .offline-reason-text {
   color: var(--fl-text-main);
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table-offline-reason {
@@ -1306,6 +1352,10 @@ body.theme-dark,
   font-family: inherit;
   line-height: normal;
   outline: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-label-pill:hover {
@@ -1588,6 +1638,28 @@ body.theme-dark .card-cluster-btn:hover svg,
   vertical-align: middle;
 }
 
+.table-agent-name-cell {
+  max-width: 280px;
+  min-width: 140px;
+}
+
+.table-agent-name-link {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.table-agent-name-link .agent-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fleet-data-table tr:hover td {
   background: rgba(59, 130, 246, 0.04);
 }
@@ -1667,6 +1739,8 @@ body.theme-dark .fleet-modal,
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .modal-header-icon {
@@ -1679,6 +1753,11 @@ body.theme-dark .fleet-modal,
   font-size: 16px;
   font-weight: 700;
   color: var(--fl-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+  min-width: 0;
 }
 
 .modal-close {
@@ -2010,6 +2089,12 @@ body.theme-dark .fleet-modal,
   font-weight: 700;
   color: var(--fl-brand-blue);
   text-decoration: none;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .queue-job-name:hover {

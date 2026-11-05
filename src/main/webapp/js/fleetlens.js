@@ -839,7 +839,7 @@
       return `
         <div class="queue-item-row" data-id="${item.id}">
           <div class="queue-item-main">
-            <a href="${ROOT_URL}/${escapeHtml(item.url)}" class="queue-job-name" target="_blank" rel="noopener">
+            <a href="${ROOT_URL}/${escapeHtml(item.url)}" class="queue-job-name" target="_blank" rel="noopener" title="${escapeHtml(item.name)}">
               ${escapeHtml(item.name)}
             </a>
             ${labelChip}
@@ -968,21 +968,21 @@
       let cardHtml = `
         <div class="card-top">
           <div class="agent-title-block">
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="agent-name-row">
               ${agent.name !== '(built-in)' ? `
                 <input type="checkbox" class="agent-select-checkbox card-select-checkbox" data-agent="${escapeHtml(agent.name)}" ${state.selectedAgents.has(agent.name) ? 'checked' : ''} aria-label="Select ${escapeHtml(agent.name)}" />
               ` : ''}
-              <a href="${computerUrl}" class="agent-name-link">
+              <a href="${computerUrl}" class="agent-name-link" title="${escapeHtml(agent.displayName || agent.name)}">
                 <span class="status-indicator ${statusDotClass}"></span>
-                ${escapeHtml(agent.displayName || agent.name)}
+                <span class="agent-name-text">${escapeHtml(agent.displayName || agent.name)}</span>
               </a>
               <button class="fl-copy-icon-btn btn-copy" data-copy="${escapeHtml(agent.name)}" title="Copy Agent Name: ${escapeHtml(agent.name)}" type="button">
                 <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               </button>
             </div>
             <div class="badge-row">
-              <span class="origin-badge ${provBadgeClass}">${provIcon} ${escapeHtml(provName)}</span>
-              <span class="os-badge">${osIcon} ${escapeHtml(osPretty)}</span>
+              <span class="origin-badge ${provBadgeClass}" title="${escapeHtml(provName)}">${provIcon} <span class="badge-text">${escapeHtml(provName)}</span></span>
+              <span class="os-badge" title="${escapeHtml(osPretty)}">${osIcon} <span class="badge-text">${escapeHtml(osPretty)}</span></span>
               ${osArch ? `<span class="arch-chip">${escapeHtml(osArch)}</span>` : ''}
               ${agent.ipAddress ? `
                 <button class="fl-copy-chip btn-copy-ip" data-copy="${escapeHtml(agent.ipAddress)}" title="Click to copy IP: ${escapeHtml(agent.ipAddress)}" type="button">
@@ -1054,7 +1054,7 @@
           <!-- Assigned Labels -->
           ${agent.labels && agent.labels.length > 0 ? `
             <div class="agent-labels-row">
-              ${agent.labels.map(l => `<span class="agent-label-pill" data-label="${escapeHtml(l)}">${escapeHtml(l)}</span>`).join('')}
+              ${agent.labels.map(l => `<span class="agent-label-pill" data-label="${escapeHtml(l)}" title="${escapeHtml(l)}">${escapeHtml(l)}</span>`).join('')}
             </div>
           ` : ''}
         </div>
@@ -1151,11 +1151,11 @@
             <input type="checkbox" class="agent-select-checkbox table-select-checkbox" data-agent="${escapeHtml(agent.name)}" ${state.selectedAgents.has(agent.name) ? 'checked' : ''} aria-label="Select ${escapeHtml(agent.name)}" />
           ` : ''}
         </td>
-        <td>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <a href="${computerUrl}" class="agent-name-link">
+        <td class="table-agent-name-cell">
+          <div class="table-agent-name-row" style="display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 280px;">
+            <a href="${computerUrl}" class="agent-name-link table-agent-name-link" title="${escapeHtml(agent.displayName || agent.name)}">
               <span class="status-indicator ${statusDotClass}"></span>
-              ${escapeHtml(agent.displayName || agent.name)}
+              <span class="agent-name-text">${escapeHtml(agent.displayName || agent.name)}</span>
             </a>
             <button class="fl-copy-icon-btn btn-copy" data-copy="${escapeHtml(agent.name)}" title="Copy Agent Name: ${escapeHtml(agent.name)}" type="button">
               <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -1171,10 +1171,10 @@
           ` : ''}
         </td>
         <td>
-          <span class="origin-badge ${provBadgeClass}">${provIcon} ${escapeHtml(provName)}</span>
+          <span class="origin-badge ${provBadgeClass}" title="${escapeHtml(provName)}">${provIcon} <span class="badge-text">${escapeHtml(provName)}</span></span>
         </td>
         <td>
-          <span class="os-badge">${osIcon} ${escapeHtml(osPretty)}</span>
+          <span class="os-badge" title="${escapeHtml(osPretty)}">${osIcon} <span class="badge-text">${escapeHtml(osPretty)}</span></span>
           ${osArch ? `<span class="arch-chip">${escapeHtml(osArch)}</span>` : ''}
         </td>
         <td>
