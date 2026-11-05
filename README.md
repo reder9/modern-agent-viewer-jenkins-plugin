@@ -5,7 +5,6 @@
 [![Version](https://img.shields.io/github/v/release/reder9/modern-agent-viewer-jenkins-plugin?label=Release&color=blue)](https://github.com/reder9/modern-agent-viewer-jenkins-plugin/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![SpotBugs](https://img.shields.io/badge/SpotBugs-Passed-brightgreen.svg)](https://spotbugs.github.io/)
-[![Jenkins Baseline](https://img.shields.io/badge/Jenkins-2.555.3-2368a2.svg)](https://www.jenkins.io/)
 
 Modern Agent Viewer transforms the default Jenkins agent and computer management interface into a real-time, high-density operations console.
 

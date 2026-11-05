@@ -21,9 +21,9 @@
            data-refresh-interval="${it.configuration.autoRefreshSeconds}">
 
         <!-- Pre-hydrated initial telemetry state -->
-        <script type="application/json" id="fleetlens-initial-data">
+        <div id="fleetlens-initial-data" style="display:none">
           <j:out value="${it.initialStateJson}"/>
-        </script>
+        </div>
 
         <!-- Fleet Header -->
         <header class="fleet-header">

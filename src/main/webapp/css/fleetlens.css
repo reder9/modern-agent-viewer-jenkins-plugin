@@ -467,9 +467,9 @@ body.theme-dark,
 
 .kpi-total::before { background: var(--fl-brand-blue); }
 .kpi-online::before { background: var(--fl-green-online); }
-.kpi-busy::before { background: #6366f1; }
-.kpi-idle::before { background: #14b8a6; }
-.kpi-offline::before { background: #94a3b8; }
+.kpi-busy::before { background: var(--fl-purple-static); }
+.kpi-idle::before { background: var(--fl-cyan-docker); }
+.kpi-offline::before { background: var(--fl-text-sub); }
 .kpi-storage::before { background: var(--fl-amber-warning); }
 
 .kpi-label {
