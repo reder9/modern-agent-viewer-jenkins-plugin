@@ -5,12 +5,14 @@ import hudson.remoting.VirtualChannel;
 import io.jenkins.plugins.fleetlens.api.dto.TimeMetricsDto;
 import io.jenkins.plugins.fleetlens.monitoring.callable.FetchHostUptimeCallable;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
  * Service for tracking connection duration and querying host OS boot uptime.
+ * Uses non-blocking background probes and positive/negative caching.
  */
 public class AgentUptimeService {
 
@@ -38,17 +40,29 @@ public class AgentUptimeService {
         }
     }
 
+    /**
+     * Asynchronously warms up the host uptime cache for an online computer.
+     */
+    public static CompletableFuture<Long> warmupAsync(Computer computer) {
+        if (computer == null || !computer.isOnline()) {
+            return null;
+        }
+        String nodeName = getCacheKey(computer);
+        UptimeCacheEntry entry = HOST_UPTIME_CACHE.get(nodeName);
+        if (entry != null && !entry.isExpired()) {
+            return null;
+        }
+
+        return FleetLensTelemetryExecutor.submitDeduplicated("uptime:" + nodeName, () -> probeHostUptime(computer, nodeName));
+    }
+
     public static TimeMetricsDto getTimeMetrics(Computer computer) {
         TimeMetricsDto dto = new TimeMetricsDto();
         if (computer == null) {
             return dto;
         }
 
-        String nodeName = computer.getName();
-        if (nodeName.isEmpty()) {
-            nodeName = "(controller)";
-        }
-
+        String nodeName = getCacheKey(computer);
         boolean isOnline = computer.isOnline();
         dto.setConnected(isOnline);
 
@@ -63,7 +77,6 @@ public class AgentUptimeService {
                 dto.setConnectedDurationHuman("Connected");
             }
 
-            // Probe host uptime
             long hostUptime = getHostUptime(computer, nodeName);
             if (hostUptime > 0) {
                 dto.setHostUptimeMs(hostUptime);
@@ -84,6 +97,16 @@ public class AgentUptimeService {
             return entry.getCurrentEstimatedUptime();
         }
 
+        warmupAsync(computer);
+
+        entry = HOST_UPTIME_CACHE.get(nodeName);
+        if (entry != null) {
+            return entry.getCurrentEstimatedUptime();
+        }
+        return -1L;
+    }
+
+    private static Long probeHostUptime(Computer computer, String nodeName) {
         VirtualChannel channel = computer.getChannel();
         if (channel != null) {
             try {
@@ -96,11 +119,16 @@ public class AgentUptimeService {
                 LOGGER.log(Level.FINE, "Failed to fetch host uptime for " + nodeName, e);
             }
         }
+        // Cache negative result if no valid uptime could be read so we don't re-probe on every poll
+        UptimeCacheEntry prev = HOST_UPTIME_CACHE.get(nodeName);
+        long fallback = (prev != null && prev.baseUptimeMs > 0) ? prev.getCurrentEstimatedUptime() : -1L;
+        HOST_UPTIME_CACHE.put(nodeName, new UptimeCacheEntry(fallback));
+        return fallback;
+    }
 
-        if (entry != null) {
-            return entry.getCurrentEstimatedUptime();
-        }
-        return -1L;
+    private static String getCacheKey(Computer computer) {
+        String nodeName = computer.getName();
+        return nodeName.isEmpty() ? "(controller)" : nodeName;
     }
 
     public static String formatDuration(long millis) {

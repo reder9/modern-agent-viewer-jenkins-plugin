@@ -16,8 +16,8 @@ import io.jenkins.plugins.fleetlens.monitoring.AgentNetworkService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentOsDetector;
 import io.jenkins.plugins.fleetlens.monitoring.AgentStorageService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentUptimeService;
+import io.jenkins.plugins.fleetlens.monitoring.FleetLensTelemetryExecutor;
 import jenkins.model.Jenkins;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -39,11 +39,13 @@ public class FleetLensDataService {
         }
 
         Computer[] computers = jenkins.getComputers();
-        List<AgentDto> result = new ArrayList<>(computers.length);
+        // Warm up any cold caches across the entire fleet in parallel with a strict bounded budget
+        FleetLensTelemetryExecutor.warmupComputers(computers);
 
+        List<AgentDto> result = new ArrayList<>(computers.length);
         for (Computer computer : computers) {
             if (computer != null) {
-                result.add(toAgentDto(computer));
+                result.add(toAgentDto(computer, false));
             }
         }
 
@@ -51,7 +53,13 @@ public class FleetLensDataService {
     }
 
     public static FleetOverviewDto getFleetOverview() {
-        List<AgentDto> agents = getAllAgents();
+        return getFleetOverview(getAllAgents());
+    }
+
+    public static FleetOverviewDto getFleetOverview(List<AgentDto> agents) {
+        if (agents == null) {
+            agents = Collections.emptyList();
+        }
         FleetOverviewDto overview = new FleetOverviewDto();
 
         int total = agents.size();
@@ -144,8 +152,15 @@ public class FleetLensDataService {
     }
 
     public static AgentDto toAgentDto(Computer computer) {
+        return toAgentDto(computer, true);
+    }
+
+    public static AgentDto toAgentDto(Computer computer, boolean warmupSingleNode) {
         AgentDto dto = new AgentDto();
         Node node = computer.getNode();
+        if (warmupSingleNode) {
+            FleetLensTelemetryExecutor.warmupSingleComputer(computer, node);
+        }
 
         String rawName = computer.getName();
         String name = rawName.isEmpty() ? "(built-in)" : rawName;
@@ -195,14 +210,9 @@ public class FleetLensDataService {
         // Time Metrics (Uptime & Connection)
         dto.setTimeMetrics(AgentUptimeService.getTimeMetrics(computer));
 
-        // Host & Node details
-        String host = null;
-        try {
-            host = computer.getHostName();
-            dto.setHostName(host);
-        } catch (IOException | InterruptedException e) {
-            LOGGER.log(Level.FINE, "Failed to resolve hostname for " + computer.getName(), e);
-        }
+        // Host & Node details (non-blocking via cached AgentNetworkService)
+        String host = AgentNetworkService.resolveHostName(computer, node);
+        dto.setHostName(host);
 
         String ip = AgentNetworkService.resolveIpAddress(computer, node, host);
         dto.setIpAddress(ip);

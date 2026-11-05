@@ -206,18 +206,22 @@
     setupEventListeners();
 
     // Check pre-hydrated state for instant 0ms rendering
+    let hasPrehydratedState = false;
     const initialDataEl = document.getElementById('fleetlens-initial-data');
     if (initialDataEl && initialDataEl.textContent.trim()) {
       try {
         const initialData = JSON.parse(initialDataEl.textContent.trim());
         if (initialData && initialData.overview) {
+          hasPrehydratedState = true;
           state.overview = initialData.overview;
           state.agents = initialData.agents || [];
           state.queue = initialData.queue || null;
           state.isLoading = false;
+          state.lastUpdated = Date.now();
           updateKpis(state.overview);
           updateProvisionerCounts(state.overview.provisionerCounts, state.overview.totalAgents);
           render();
+          updateLastUpdatedTime();
           if (window.__AUTO_OPEN_CONNECT__) {
             openConnectModal(window.__AUTO_OPEN_CONNECT__);
           }
@@ -228,7 +232,16 @@
     }
 
     setRefreshTimer(state.refreshInterval);
-    fetchFleetData();
+    if (!hasPrehydratedState) {
+      fetchFleetData();
+    } else {
+      const hasPendingBackgroundTelemetry = state.agents.some(function(a) {
+        return a.online && (!a.storage || !a.storage.totalBytes || !a.timeMetrics || a.timeMetrics.hostUptimeMs < 0);
+      });
+      if (hasPendingBackgroundTelemetry) {
+        setTimeout(fetchFleetData, 1200);
+      }
+    }
 
     // Start relative time ticker for "updated X seconds ago"
     setInterval(updateLastUpdatedTime, 5000);

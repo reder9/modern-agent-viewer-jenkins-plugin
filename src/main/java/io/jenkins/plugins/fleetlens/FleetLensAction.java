@@ -64,8 +64,8 @@ public class FleetLensAction implements RootAction {
         Jenkins.get().checkPermission(Jenkins.READ);
         boolean canConfigure = Jenkins.get().hasPermission(Jenkins.ADMINISTER) || Jenkins.get().hasPermission(Computer.CONFIGURE);
 
-        FleetOverviewDto overview = FleetLensDataService.getFleetOverview();
         List<AgentDto> agents = FleetLensDataService.getAllAgents();
+        FleetOverviewDto overview = FleetLensDataService.getFleetOverview(agents);
         QueueOverviewDto queue = QueueInspectionService.inspectQueue();
 
         JSONObject response = new JSONObject();
@@ -89,8 +89,8 @@ public class FleetLensAction implements RootAction {
         Jenkins.get().checkPermission(Jenkins.READ);
         boolean canConfigure = Jenkins.get().hasPermission(Jenkins.ADMINISTER) || Jenkins.get().hasPermission(Computer.CONFIGURE);
 
-        FleetOverviewDto overview = FleetLensDataService.getFleetOverview();
         List<AgentDto> agents = FleetLensDataService.getAllAgents();
+        FleetOverviewDto overview = FleetLensDataService.getFleetOverview(agents);
         QueueOverviewDto queue = QueueInspectionService.inspectQueue();
 
         JSONObject response = new JSONObject();

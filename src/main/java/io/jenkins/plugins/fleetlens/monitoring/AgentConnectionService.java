@@ -28,6 +28,36 @@ public final class AgentConnectionService {
 
     // Caches runtime user identities discovered while agents are online
     private static final Map<String, String> RUNTIME_USER_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, String> CREDENTIALS_USER_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, CachedConnection> CONNECTION_CACHE = new ConcurrentHashMap<>();
+    private static final long CONNECTION_CACHE_TTL_MS = 60_000L; // 60 seconds
+
+    private static final class CachedConnection {
+        final ConnectionDto dto;
+        final boolean onlineWhenSampled;
+        final String ipWhenSampled;
+        final String osFamilyWhenSampled;
+        final long timestamp;
+
+        CachedConnection(ConnectionDto dto, boolean onlineWhenSampled, String ipWhenSampled, String osFamilyWhenSampled) {
+            this.dto = dto;
+            this.onlineWhenSampled = onlineWhenSampled;
+            this.ipWhenSampled = ipWhenSampled != null ? ipWhenSampled : "";
+            this.osFamilyWhenSampled = osFamilyWhenSampled != null ? osFamilyWhenSampled : "";
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        boolean matches(boolean isOnline, String ip, String osFamily) {
+            if ((System.currentTimeMillis() - timestamp) > CONNECTION_CACHE_TTL_MS) {
+                return false;
+            }
+            String normIp = ip != null ? ip : "";
+            String normOs = osFamily != null ? osFamily : "";
+            return this.onlineWhenSampled == isOnline
+                    && this.ipWhenSampled.equals(normIp)
+                    && this.osFamilyWhenSampled.equals(normOs);
+        }
+    }
 
     private static final Pattern MAC_HOME_PATTERN = Pattern.compile("^/Users/([a-zA-Z0-9._-]+)(?:/.*)?$");
     private static final Pattern LINUX_HOME_PATTERN = Pattern.compile("^/home/([a-zA-Z0-9._-]+)(?:/.*)?$");
@@ -45,6 +75,15 @@ public final class AgentConnectionService {
         }
 
         String nodeName = computer.getName();
+        String cacheKey = nodeName.isEmpty() ? "(controller)" : nodeName;
+        boolean isOnline = computer.isOnline();
+        String osFamily = (os != null && os.getFamily() != null) ? os.getFamily() : "OTHER";
+
+        CachedConnection cached = CONNECTION_CACHE.get(cacheKey);
+        if (cached != null && cached.matches(isOnline, ip, osFamily)) {
+            return cached.dto;
+        }
+
         ComputerLauncher launcher = getLauncher(computer, node);
 
         String sshUser = null;
@@ -109,7 +148,7 @@ public final class AgentConnectionService {
         }
 
         // 2. Tier 2: Agent Runtime Remoting Telemetry (user.name from systemProperties)
-        if (sshUser == null) {
+        if (sshUser == null && isOnline) {
             try {
                 Map<Object, Object> sysProps = computer.getSystemProperties();
                 if (sysProps != null && sysProps.containsKey("user.name")) {
@@ -213,6 +252,7 @@ public final class AgentConnectionService {
             dto.setPrimaryCommand("ssh " + portParam + sshUser + "@" + targetHost);
         }
 
+        CONNECTION_CACHE.put(cacheKey, new CachedConnection(dto, isOnline, ip, osFamily));
         return dto;
     }
 
@@ -281,6 +321,10 @@ public final class AgentConnectionService {
         if (credentialsId == null || credentialsId.trim().isEmpty()) {
             return null;
         }
+        String cachedUser = CREDENTIALS_USER_CACHE.get(credentialsId);
+        if (cachedUser != null) {
+            return cachedUser.isEmpty() ? null : cachedUser;
+        }
         try {
             Class<?> cpClass = Class.forName("com.cloudbees.plugins.credentials.CredentialsProvider");
             Class<?> credClass = Class.forName("com.cloudbees.plugins.credentials.common.StandardUsernameCredentials");
@@ -302,7 +346,9 @@ public final class AgentConnectionService {
                             if (getUsername != null) {
                                 Object u = getUsername.invoke(c);
                                 if (u instanceof String && !((String) u).trim().isEmpty()) {
-                                    return (String) u;
+                                    String found = ((String) u).trim();
+                                    CREDENTIALS_USER_CACHE.put(credentialsId, found);
+                                    return found;
                                 }
                             }
                         }
@@ -312,6 +358,7 @@ public final class AgentConnectionService {
         } catch (Throwable t) {
             LOGGER.log(Level.FINE, "Failed reflective credentials lookup: " + t.getMessage());
         }
+        CREDENTIALS_USER_CACHE.put(credentialsId, "");
         return null;
     }
 
@@ -327,6 +374,7 @@ public final class AgentConnectionService {
     public static void clearCache(String nodeName) {
         if (nodeName != null) {
             RUNTIME_USER_CACHE.remove(nodeName);
+            CONNECTION_CACHE.remove(nodeName);
         }
     }
 }

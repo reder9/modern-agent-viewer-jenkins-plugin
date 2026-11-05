@@ -14,151 +14,254 @@ import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * Service for discovering and verifying agent network IP addresses.
- * Probes the agent's OS network stack over remoting channel, and checks launchers,
- * environment variables, and vSphere/EC2 metadata as fallback.
+ * Service for discovering and verifying agent network IP addresses and hostnames.
+ * Uses non-blocking background probes and positive/negative caching so slow DNS or
+ * unresponsive channels never block HTTP request threads.
  */
 public final class AgentNetworkService {
 
     private static final Logger LOGGER = Logger.getLogger(AgentNetworkService.class.getName());
-    private static final Map<String, CachedIp> IP_CACHE = new ConcurrentHashMap<>();
-    private static final long CACHE_TTL_MS = 5 * 60 * 1000L; // 5 minutes
+    private static final Map<String, CachedNetwork> NETWORK_CACHE = new ConcurrentHashMap<>();
+    private static final long ONLINE_CACHE_TTL_MS = 5 * 60 * 1000L;  // 5 minutes
+    private static final long OFFLINE_CACHE_TTL_MS = 2 * 60 * 1000L; // 2 minutes
 
     private static final Pattern IPV4_PATTERN =
             Pattern.compile("^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.){3}(25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)$");
 
     private AgentNetworkService() {}
 
-    private static final class CachedIp {
+    private static final class CachedNetwork {
+        final String hostName;
         final String ip;
+        final boolean onlineWhenSampled;
         final long timestamp;
 
-        CachedIp(String ip) {
+        CachedNetwork(String hostName, String ip, boolean onlineWhenSampled) {
+            this.hostName = hostName;
             this.ip = ip;
+            this.onlineWhenSampled = onlineWhenSampled;
             this.timestamp = System.currentTimeMillis();
         }
 
         boolean isExpired() {
-            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
+            long ttl = onlineWhenSampled ? ONLINE_CACHE_TTL_MS : OFFLINE_CACHE_TTL_MS;
+            return (System.currentTimeMillis() - timestamp) > ttl;
         }
     }
 
     /**
-     * Resolves the verified IPv4 address for the given computer and node.
-     * Returns null if no valid IP address can be found.
+     * Asynchronously warms up the network hostname and IP cache for a computer.
+     */
+    public static CompletableFuture< Void > warmupAsync(Computer computer, Node node) {
+        if (computer == null) {
+            return null;
+        }
+        String nodeName = getCacheKey(computer);
+        boolean isOnline = computer.isOnline();
+        CachedNetwork cached = NETWORK_CACHE.get(nodeName);
+        if (cached != null && !cached.isExpired() && cached.onlineWhenSampled == isOnline) {
+            return null;
+        }
+
+        return FleetLensTelemetryExecutor.submitDeduplicated("net:" + nodeName, () -> {
+            probeAndCacheNetwork(computer, node, nodeName);
+            return null;
+        });
+    }
+
+    /**
+     * Non-blocking resolution of the computer's hostname.
+     */
+    public static String resolveHostName(Computer computer, Node node) {
+        if (computer == null) {
+            return null;
+        }
+        String nodeName = getCacheKey(computer);
+        boolean isOnline = computer.isOnline();
+
+        CachedNetwork cached = NETWORK_CACHE.get(nodeName);
+        if (cached != null && !cached.isExpired() && cached.onlineWhenSampled == isOnline) {
+            return cached.hostName;
+        }
+
+        warmupAsync(computer, node);
+
+        cached = NETWORK_CACHE.get(nodeName);
+        if (cached != null && cached.hostName != null) {
+            return cached.hostName;
+        }
+
+        // Fast non-blocking launcher host fallback
+        return extractLauncherHost(resolveLauncher(computer, node));
+    }
+
+    /**
+     * Resolves the verified IPv4 address for the given computer and node without blocking
+     * the calling HTTP thread on slow RPCs or DNS timeouts.
      */
     public static String resolveIpAddress(Computer computer, Node node, String hostName) {
         if (computer == null) {
             return null;
         }
 
-        String nodeName = computer.getName();
-        if (nodeName.isEmpty()) {
-            nodeName = "(controller)";
+        String nodeName = getCacheKey(computer);
+        boolean isOnline = computer.isOnline();
+
+        // 1. Check fast literal IPv4 in explicit hostName parameter (if caller passed one directly)
+        if (isIpv4(hostName)) {
+            return hostName.trim();
         }
 
-        // 1. Check cache
-        CachedIp cached = IP_CACHE.get(nodeName);
-        if (cached != null && !cached.isExpired() && isIpv4(cached.ip)) {
+        // 2. Check positive/negative cache
+        CachedNetwork cached = NETWORK_CACHE.get(nodeName);
+        if (cached != null && !cached.isExpired() && cached.onlineWhenSampled == isOnline) {
             return cached.ip;
         }
 
-        // 2. Probing live agent network interfaces via remoting channel
-        if (computer.isOnline()) {
+        // 3. Check fast in-memory launcher host literal IPv4
+        String launcherHost = extractLauncherHost(resolveLauncher(computer, node));
+        if (isIpv4(launcherHost)) {
+            NETWORK_CACHE.put(nodeName, new CachedNetwork(
+                    hostName != null ? hostName : launcherHost,
+                    launcherHost,
+                    isOnline));
+            return launcherHost;
+        }
+
+        // 4. Trigger background probe (RPC + DNS) if not already cached
+        warmupAsync(computer, node);
+
+        // Re-check cache in case background probe completed quickly
+        cached = NETWORK_CACHE.get(nodeName);
+        if (cached != null && isIpv4(cached.ip)) {
+            return cached.ip;
+        }
+
+        return null;
+    }
+
+    private static void probeAndCacheNetwork(Computer computer, Node node, String nodeName) {
+        boolean isOnline = computer.isOnline();
+        String launcherHost = extractLauncherHost(resolveLauncher(computer, node));
+        String resolvedHost = launcherHost;
+
+        if (isOnline) {
+            try {
+                String chHost = computer.getHostName();
+                if (chHost != null && !chHost.trim().isEmpty()) {
+                    resolvedHost = chHost.trim();
+                }
+            } catch (IOException | InterruptedException e) {
+                LOGGER.log(Level.FINE, "Failed to resolve hostname for " + nodeName, e);
+            }
+        }
+
+        String resolvedIp = probeIpInternal(computer, launcherHost, resolvedHost, isOnline, nodeName);
+
+        // Preserve last known good IP if agent went offline and offline resolution returned null
+        if (resolvedIp == null && !isOnline) {
+            CachedNetwork prev = NETWORK_CACHE.get(nodeName);
+            if (prev != null && isIpv4(prev.ip)) {
+                resolvedIp = prev.ip;
+            }
+        }
+
+        NETWORK_CACHE.put(nodeName, new CachedNetwork(resolvedHost, resolvedIp, isOnline));
+    }
+
+    private static String probeIpInternal(
+            Computer computer,
+            String launcherHost,
+            String hostName,
+            boolean isOnline,
+            String nodeName) {
+
+        // 1. Probe live agent network interfaces via remoting channel
+        if (isOnline) {
             VirtualChannel channel = computer.getChannel();
             if (channel != null) {
                 try {
                     String probedIp = channel.call(new FetchAgentNetworkCallable());
                     if (isIpv4(probedIp)) {
-                        IP_CACHE.put(nodeName, new CachedIp(probedIp));
-                        return probedIp;
+                        return probedIp.trim();
                     }
                 } catch (IOException | InterruptedException e) {
                     LOGGER.log(Level.FINE, "Failed to probe network interfaces for " + nodeName, e);
                 }
             }
-        }
 
-        // 3. Check environment variables (e.g. VSPHERE_IP, EC2_PRIVATE_IP_ADDRESS, SSH_CONNECTION)
-        try {
-            EnvVars env = computer.getEnvironment();
-            if (env != null) {
-                String vsphereIp = env.get("VSPHERE_IP");
-                if (isIpv4(vsphereIp)) {
-                    IP_CACHE.put(nodeName, new CachedIp(vsphereIp));
-                    return vsphereIp;
-                }
-                String ec2Private = env.get("EC2_PRIVATE_IP_ADDRESS");
-                if (isIpv4(ec2Private)) {
-                    IP_CACHE.put(nodeName, new CachedIp(ec2Private));
-                    return ec2Private;
-                }
-                String ec2Public = env.get("EC2_PUBLIC_IP_ADDRESS");
-                if (isIpv4(ec2Public)) {
-                    IP_CACHE.put(nodeName, new CachedIp(ec2Public));
-                    return ec2Public;
-                }
-                String sshConn = env.get("SSH_CONNECTION");
-                if (sshConn != null) {
-                    String[] parts = sshConn.trim().split("\\s+");
-                    // SSH_CONNECTION format: <client_ip> <client_port> <server_ip> <server_port>
-                    // For an inbound SSH session to the agent, server_ip (parts[2]) is the agent's IP.
-                    if (parts.length >= 4 && isIpv4(parts[2])) {
-                        IP_CACHE.put(nodeName, new CachedIp(parts[2]));
-                        return parts[2];
-                    } else if (parts.length >= 1 && isIpv4(parts[0])) {
-                        IP_CACHE.put(nodeName, new CachedIp(parts[0]));
-                        return parts[0];
+            // 2. Check environment variables (only when online)
+            try {
+                EnvVars env = computer.getEnvironment();
+                if (env != null) {
+                    String vsphereIp = env.get("VSPHERE_IP");
+                    if (isIpv4(vsphereIp)) return vsphereIp.trim();
+
+                    String ec2Private = env.get("EC2_PRIVATE_IP_ADDRESS");
+                    if (isIpv4(ec2Private)) return ec2Private.trim();
+
+                    String ec2Public = env.get("EC2_PUBLIC_IP_ADDRESS");
+                    if (isIpv4(ec2Public)) return ec2Public.trim();
+
+                    String sshConn = env.get("SSH_CONNECTION");
+                    if (sshConn != null) {
+                        String[] parts = sshConn.trim().split("\\s+");
+                        if (parts.length >= 4 && isIpv4(parts[2])) {
+                            return parts[2];
+                        } else if (parts.length >= 1 && isIpv4(parts[0])) {
+                            return parts[0];
+                        }
                     }
                 }
+            } catch (IOException | InterruptedException | RuntimeException ignored) {
             }
-        } catch (IOException | InterruptedException ignored) {
         }
 
-        // 4. Check launcher host configuration (SSHLauncher, etc.)
-        ComputerLauncher launcher = null;
-        if (computer instanceof SlaveComputer) {
-            launcher = ((SlaveComputer) computer).getLauncher();
-        } else if (node instanceof Slave) {
-            launcher = ((Slave) node).getLauncher();
-        }
-        String launcherHost = extractLauncherHost(launcher);
+        // 3. Check launcher host literal IPv4
         if (isIpv4(launcherHost)) {
-            IP_CACHE.put(nodeName, new CachedIp(launcherHost));
-            return launcherHost;
+            return launcherHost.trim();
         }
 
-        // 5. If hostName itself is already an IPv4 address
+        // 4. Check hostName literal IPv4
         if (isIpv4(hostName)) {
-            IP_CACHE.put(nodeName, new CachedIp(hostName));
-            return hostName;
+            return hostName.trim();
         }
 
-        // 6. Attempt DNS resolution of hostName from controller
-        if (hostName != null && !hostName.trim().isEmpty()) {
+        // 5. Attempt DNS resolution on background thread (launcherHost first, then hostName)
+        String dnsCandidate = (launcherHost != null && !launcherHost.trim().isEmpty()) ? launcherHost : hostName;
+        if (dnsCandidate != null && !dnsCandidate.trim().isEmpty()) {
             try {
-                InetAddress addr = InetAddress.getByName(hostName.trim());
+                InetAddress addr = InetAddress.getByName(dnsCandidate.trim());
                 String resolved = addr.getHostAddress();
-                if (isIpv4(resolved) && !resolved.startsWith("127.")) {
-                    IP_CACHE.put(nodeName, new CachedIp(resolved));
+                if (isIpv4(resolved)) {
                     return resolved;
                 }
             } catch (UnknownHostException | SecurityException ignored) {
-                // Resolution failed (e.g. unresolvable NetBIOS machine name)
+                // Unresolvable hostname; negative result will be cached in NETWORK_CACHE
             }
         }
 
-        // If cached value exists even if expired, return as last-known good IP
-        if (cached != null && isIpv4(cached.ip)) {
-            return cached.ip;
-        }
+        return null;
+    }
 
+    private static String getCacheKey(Computer computer) {
+        String nodeName = computer.getName();
+        return nodeName.isEmpty() ? "(controller)" : nodeName;
+    }
+
+    private static ComputerLauncher resolveLauncher(Computer computer, Node node) {
+        if (computer instanceof SlaveComputer) {
+            return ((SlaveComputer) computer).getLauncher();
+        } else if (node instanceof Slave) {
+            return ((Slave) node).getLauncher();
+        }
         return null;
     }
 
@@ -196,7 +299,7 @@ public final class AgentNetworkService {
 
     public static void clearCache(String nodeName) {
         if (nodeName != null) {
-            IP_CACHE.remove(nodeName);
+            NETWORK_CACHE.remove(nodeName);
         }
     }
 }

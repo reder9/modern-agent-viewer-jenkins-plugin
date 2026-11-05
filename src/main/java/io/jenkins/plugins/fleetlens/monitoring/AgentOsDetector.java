@@ -9,53 +9,110 @@ import io.jenkins.plugins.fleetlens.monitoring.callable.FetchOsInfoCallable;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
  * Detects operating system family, human-readable name, distro, and CPU architecture.
+ * Uses bounded background probing and positive/negative caching to prevent blocking HTTP threads.
  */
 public class AgentOsDetector {
 
     private static final Logger LOGGER = Logger.getLogger(AgentOsDetector.class.getName());
-    private static final Map<String, OsDto> OS_CACHE = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 5 * 60 * 1000L; // 5 minutes
+
+    private static final Map<String, CachedOs> OS_CACHE = new ConcurrentHashMap<>();
+
+    private static final class CachedOs {
+        final OsDto dto;
+        final boolean onlineWhenSampled;
+        final boolean distroProbed;
+        final long timestamp;
+
+        CachedOs(OsDto dto, boolean onlineWhenSampled, boolean distroProbed) {
+            this.dto = dto;
+            this.onlineWhenSampled = onlineWhenSampled;
+            this.distroProbed = distroProbed;
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        boolean isExpired() {
+            return (System.currentTimeMillis() - timestamp) > CACHE_TTL_MS;
+        }
+    }
+
+    /**
+     * Asynchronously warms up the OS detection cache for an online computer if needed.
+     */
+    public static CompletableFuture<OsDto> warmupAsync(Computer computer) {
+        if (computer == null || !computer.isOnline()) {
+            return null;
+        }
+        String nodeName = getCacheKey(computer);
+        CachedOs cached = OS_CACHE.get(nodeName);
+        if (cached != null && !cached.isExpired() && cached.onlineWhenSampled && cached.distroProbed) {
+            return null;
+        }
+
+        return FleetLensTelemetryExecutor.submitDeduplicated("os:" + nodeName, () -> probeOnlineOs(computer, nodeName, true));
+    }
 
     public static OsDto detect(Computer computer) {
         if (computer == null) {
             return new OsDto("OTHER", "Unknown", "Unknown OS", "", "", "symbol-help");
         }
 
-        String nodeName = computer.getName();
-        if (nodeName.isEmpty()) {
-            nodeName = "(controller)";
+        String nodeName = getCacheKey(computer);
+        boolean isOnline = computer.isOnline();
+
+        CachedOs cached = OS_CACHE.get(nodeName);
+        if (cached != null && !cached.isExpired() && cached.onlineWhenSampled == isOnline) {
+            if (!isOnline || cached.distroProbed) {
+                return cached.dto;
+            }
         }
 
-        // Check if agent is online; if offline, return cached or fallback
-        if (!computer.isOnline()) {
-            OsDto cached = OS_CACHE.get(nodeName);
-            if (cached != null) {
-                return cached;
+        // Offline path: fast in-memory label inspection or last known OS
+        if (!isOnline) {
+            if (cached != null && cached.onlineWhenSampled) {
+                return cached.dto;
             }
-            // Check node labels for offline OS hint
-            Node node = computer.getNode();
-            if (node != null) {
-                for (Label l : node.getAssignedLabels()) {
-                    String lname = l.getName().toLowerCase(Locale.ROOT);
-                    if (lname.contains("mac") || lname.contains("darwin") || lname.contains("apple")) {
-                        return new OsDto("MACOS", "macOS", "macOS (Apple)", "", "", "symbol-apple");
-                    }
-                    if (lname.contains("win") || lname.contains("windows")) {
-                        return new OsDto("WINDOWS", "Windows", "Windows", "", "", "symbol-windows");
-                    }
-                    if (lname.contains("linux") || lname.contains("ubuntu") || lname.contains("debian") || lname.contains("alpine")) {
-                        return new OsDto("LINUX", "Linux", "Linux", "", "", "symbol-linux");
-                    }
+            OsDto offlineDto = resolveOfflineOs(computer);
+            OS_CACHE.put(nodeName, new CachedOs(offlineDto, false, true));
+            return offlineDto;
+        }
+
+        // Online path: if warmup hasn't finished yet, kick it off in the background
+        // and return fast non-blocking system properties without waiting on FetchOsInfoCallable RPC
+        warmupAsync(computer);
+        if (cached != null && cached.onlineWhenSampled) {
+            return cached.dto;
+        }
+        return probeOnlineOs(computer, nodeName, false);
+    }
+
+    private static OsDto resolveOfflineOs(Computer computer) {
+        Node node = computer.getNode();
+        if (node != null) {
+            for (Label l : node.getAssignedLabels()) {
+                String lname = l.getName().toLowerCase(Locale.ROOT);
+                if (lname.contains("mac") || lname.contains("darwin") || lname.contains("apple")) {
+                    return new OsDto("MACOS", "macOS", "macOS (Apple)", "", "", "symbol-apple");
+                }
+                if (lname.contains("win") || lname.contains("windows")) {
+                    return new OsDto("WINDOWS", "Windows", "Windows", "", "", "symbol-windows");
+                }
+                if (lname.contains("linux") || lname.contains("ubuntu") || lname.contains("debian") || lname.contains("alpine")) {
+                    return new OsDto("LINUX", "Linux", "Linux", "", "", "symbol-linux");
                 }
             }
-            return new OsDto("OTHER", "Offline", "Offline Agent", "", "", "symbol-help");
         }
+        return new OsDto("OTHER", "Offline", "Offline Agent", "", "", "symbol-help");
+    }
 
+    private static OsDto probeOnlineOs(Computer computer, String nodeName, boolean allowRemoteCallable) {
         Map<Object, Object> sysProps = null;
         try {
             sysProps = computer.getSystemProperties();
@@ -70,11 +127,17 @@ public class AgentOsDetector {
         String family = resolveFamily(rawName);
         String prettyName = rawName;
         String icon = "symbol-terminal";
+        boolean distroProbed = true;
 
         switch (family) {
             case "LINUX":
                 icon = "symbol-linux";
-                prettyName = resolveLinuxDistro(computer, nodeName, rawName, rawVersion);
+                if (allowRemoteCallable) {
+                    prettyName = resolveLinuxDistro(computer, nodeName, rawName, rawVersion);
+                } else {
+                    prettyName = !rawVersion.isEmpty() ? "Linux (" + rawVersion + ")" : rawName;
+                    distroProbed = false;
+                }
                 break;
             case "WINDOWS":
                 icon = "symbol-windows";
@@ -94,12 +157,20 @@ public class AgentOsDetector {
                 break;
         }
 
-        // Normalize arch
         String normalizedArch = normalizeArch(rawArch);
-
         OsDto dto = new OsDto(family, rawName, prettyName, rawVersion, normalizedArch, icon);
-        OS_CACHE.put(nodeName, dto);
+
+        // Only overwrite cache if distro was probed or no probed entry exists yet
+        CachedOs existing = OS_CACHE.get(nodeName);
+        if (distroProbed || existing == null || !existing.distroProbed) {
+            OS_CACHE.put(nodeName, new CachedOs(dto, true, distroProbed));
+        }
         return dto;
+    }
+
+    private static String getCacheKey(Computer computer) {
+        String nodeName = computer.getName();
+        return nodeName.isEmpty() ? "(controller)" : nodeName;
     }
 
     private static String resolveFamily(String osName) {
@@ -115,7 +186,6 @@ public class AgentOsDetector {
 
     private static String resolveMacName(String osVersion) {
         if (osVersion == null || osVersion.isEmpty()) return "macOS";
-        // Version mapping: Darwin / macOS
         if (osVersion.startsWith("15.") || osVersion.startsWith("24.")) return "macOS 15 (Sequoia)";
         if (osVersion.startsWith("14.") || osVersion.startsWith("23.")) return "macOS 14 (Sonoma)";
         if (osVersion.startsWith("13.") || osVersion.startsWith("22.")) return "macOS 13 (Ventura)";
@@ -124,9 +194,9 @@ public class AgentOsDetector {
     }
 
     private static String resolveLinuxDistro(Computer computer, String nodeName, String defaultName, String version) {
-        OsDto cached = OS_CACHE.get(nodeName);
-        if (cached != null && !cached.getPrettyName().equalsIgnoreCase("Linux")) {
-            return cached.getPrettyName();
+        CachedOs cached = OS_CACHE.get(nodeName);
+        if (cached != null && cached.distroProbed && cached.onlineWhenSampled) {
+            return cached.dto.getPrettyName();
         }
 
         VirtualChannel channel = computer.getChannel();

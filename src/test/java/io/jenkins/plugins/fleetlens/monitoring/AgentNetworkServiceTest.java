@@ -57,5 +57,13 @@ class AgentNetworkServiceTest {
         // Unresolvable NetBIOS machine name should return null instead of polluting the IP field
         String resolved = AgentNetworkService.resolveIpAddress(slave.toComputer(), slave, "WIN-NONEXISTENT-VM");
         assertNull(resolved, "Unresolvable NetBIOS name must not be used as an IP address");
+
+        // Verify negative caching and non-blocking resolution complete instantaneously (< 50ms)
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < 50; i++) {
+            assertNull(AgentNetworkService.resolveIpAddress(slave.toComputer(), slave, "WIN-NONEXISTENT-VM"));
+        }
+        long elapsed = System.currentTimeMillis() - start;
+        assertTrue(elapsed < 250, "50 repeated calls to resolveIpAddress must be non-blocking (< 250ms), took: " + elapsed + "ms");
     }
 }
