@@ -13,6 +13,7 @@ import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest2;
+import org.kohsuke.stapler.verb.POST;
 
 /**
  * Global configuration settings for FleetLens modern agent viewer.
@@ -109,6 +110,7 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
         return true;
     }
 
+    @POST
     public FormValidation doCheckStorageWarningPercent(@QueryParameter int value) {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
         if (value < 10 || value > 99) {
@@ -117,6 +119,7 @@ public class FleetLensGlobalConfiguration extends GlobalConfiguration {
         return FormValidation.ok();
     }
 
+    @POST
     public FormValidation doCheckStorageCriticalPercent(@QueryParameter int value) {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
         if (value < 10 || value > 100) {

@@ -17,11 +17,11 @@
         </f:entry>
         <f:entry title="Storage Warning Threshold (%)" field="storageWarningPercent"
                  description="Storage percentage used at which an agent shows a warning state (default: 78%).">
-            <f:number default="78" min="10" max="99" />
+            <f:number default="78" min="10" max="99" checkMethod="post" />
         </f:entry>
         <f:entry title="Storage Critical Threshold (%)" field="storageCriticalPercent"
                  description="Storage percentage used at which an agent triggers a critical alert (default: 90%).">
-            <f:number default="90" min="10" max="100" />
+            <f:number default="90" min="10" max="100" checkMethod="post" />
         </f:entry>
         <f:entry title="Auto-Refresh Interval (seconds)" field="autoRefreshSeconds"
                  description="Default auto-refresh polling interval in seconds (0 to disable).">
