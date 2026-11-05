@@ -16,7 +16,7 @@
 
     <name>Modern Agent Viewer</name>
     <description>A modern, high-density, real-time agent and computer viewer for Jenkins featuring dynamic provider and OS categorization, visual storage gauges, uptime telemetry, and interactive diagnostic consoles.</description>
-    <url>https://github.com/reder9/modern-agent-viewer-jenkins-plugin</url>
+    <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
 
     <licenses>
         <license>
@@ -25,29 +25,21 @@
         </license>
     </licenses>
 
-    <developers>
-        <developer>
-            <id>reder9</id>
-            <name>Caleb Reder</name>
-            <email>cryptech313@gmail.com</email>
-        </developer>
-    </developers>
-
     <scm>
-        <connection>scm:git:https://github.com/reder9/modern-agent-viewer-jenkins-plugin.git</connection>
-        <developerConnection>scm:git:git@github.com:reder9/modern-agent-viewer-jenkins-plugin.git</developerConnection>
-        <url>https://github.com/reder9/modern-agent-viewer-jenkins-plugin</url>
+        <connection>scm:git:https://github.com/jenkinsci/${project.artifactId}-plugin.git</connection>
+        <developerConnection>scm:git:git@github.com:jenkinsci/${project.artifactId}-plugin.git</developerConnection>
+        <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
         <tag>${scmTag}</tag>
     </scm>
 
     <issueManagement>
         <system>GitHub Issues</system>
-        <url>https://github.com/reder9/modern-agent-viewer-jenkins-plugin/issues</url>
+        <url>https://github.com/jenkinsci/${project.artifactId}-plugin/issues</url>
     </issueManagement>
 
     <properties>
         <changelist>999999-SNAPSHOT</changelist>
-        <gitHubRepo>reder9/modern-agent-viewer-jenkins-plugin</gitHubRepo>
+        <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
         <jenkins.baseline>2.555</jenkins.baseline>
         <jenkins.version>${jenkins.baseline}.3</jenkins.version>
         <spotbugs.effort>Max</spotbugs.effort>
