@@ -102,6 +102,8 @@
   --fl-pill-bg: var(--background, #f1f5f9);
   --fl-pill-text: var(--text-color, #334155);
   --fl-pill-border: var(--fl-border, #cbd5e1);
+  --fl-pill-hover-bg: rgba(59, 130, 246, 0.15);
+  --fl-text-inverse: #ffffff;
 
   /* Inner Card Containers (Light Mode) */
   --fl-box-bg: var(--background, #f8fafc);
@@ -248,6 +250,7 @@ body.theme-dark,
   --fl-pill-bg: rgba(255, 255, 255, 0.06);
   --fl-pill-text: var(--text-color, #f1f5f9);
   --fl-pill-border: rgba(255, 255, 255, 0.14);
+  --fl-pill-hover-bg: rgba(59, 130, 246, 0.25);
 
   /* Interior Card Containers */
   --fl-box-bg: rgba(255, 255, 255, 0.04);
@@ -531,7 +534,7 @@ body.theme-dark,
 }
 
 .filter-pill:hover {
-  background: rgba(59, 130, 246, 0.15);
+  background: var(--fl-pill-hover-bg);
   border-color: var(--fl-brand-blue);
   color: var(--fl-brand-blue);
 }
@@ -539,7 +542,7 @@ body.theme-dark,
 .filter-pill.active {
   background: var(--fl-brand-blue);
   border-color: var(--fl-brand-blue);
-  color: #ffffff;
+  color: var(--fl-text-inverse, #ffffff);
 }
 
 .toolbar-secondary-row {
