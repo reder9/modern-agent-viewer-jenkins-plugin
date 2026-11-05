@@ -580,7 +580,7 @@ body.theme-dark,
 .filter-chip.active {
   background: var(--fl-brand-blue);
   border-color: var(--fl-brand-blue);
-  color: #ffffff;
+  color: var(--fl-text-inverse, #ffffff);
 }
 
 .fleet-search-wrap {
