@@ -237,6 +237,7 @@ public class FleetLensAction implements RootAction {
             AgentStorageService.clearCache(name);
             AgentOsDetector.clearCache(name);
             AgentUptimeService.clearCache(name);
+            io.jenkins.plugins.fleetlens.monitoring.AgentConnectionService.clearCache(name);
         }
         JSONObject result = new JSONObject();
         result.put("success", true);

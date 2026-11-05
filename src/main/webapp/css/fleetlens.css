@@ -1142,6 +1142,90 @@ body.theme-dark,
   color: var(--fl-green-online) !important;
 }
 
+/* Primary Highlighted Connection Recipe */
+.connect-command-card--primary {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  box-shadow: 0 2px 14px rgba(59, 130, 246, 0.12);
+}
+
+.btn-copy-primary {
+  background: var(--fl-brand-blue, #2563eb);
+  border-color: var(--fl-brand-blue, #2563eb);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.btn-copy-primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.connect-badge-pill {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: var(--fl-brand-blue, #2563eb);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.connect-source-pill {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+  display: inline-flex;
+  align-items: center;
+}
+
+.connect-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--fl-text-main);
+}
+
+.connect-source-mini {
+  font-size: 10px;
+  color: var(--fl-text-sub);
+  font-weight: normal;
+}
+
+[data-theme="light"] .connect-command-card--primary,
+html.theme-light .connect-command-card--primary,
+body.theme-light .connect-command-card--primary {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+}
+
+[data-theme="light"] .connect-source-pill,
+html.theme-light .connect-source-pill,
+body.theme-light .connect-source-pill {
+  background: rgba(147, 51, 234, 0.1);
+  border-color: rgba(147, 51, 234, 0.3);
+  color: #7e22ce;
+}
+
+[data-theme="light"] .connect-user-chip,
+html.theme-light .connect-user-chip,
+body.theme-light .connect-user-chip {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
 .btn-connect-node {
   display: inline-flex;
   align-items: center;

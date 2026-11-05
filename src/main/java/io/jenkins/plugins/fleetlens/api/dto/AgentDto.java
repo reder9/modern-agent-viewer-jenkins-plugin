@@ -29,6 +29,7 @@ public class AgentDto implements Serializable {
     private OsDto os = new OsDto("OTHER", "Unknown", "Unknown OS", "", "", "symbol-help");
     private StorageDto storage = new StorageDto();
     private TimeMetricsDto timeMetrics = new TimeMetricsDto();
+    private ConnectionDto connectionInfo = new ConnectionDto();
 
     private List<ExecutorSlotDto> executors = new ArrayList<>();
     private List<String> labels = new ArrayList<>();
@@ -174,6 +175,16 @@ public class AgentDto implements Serializable {
     public void setTimeMetrics(TimeMetricsDto timeMetrics) {
         if (timeMetrics != null) {
             this.timeMetrics = timeMetrics;
+        }
+    }
+
+    public ConnectionDto getConnectionInfo() {
+        return connectionInfo;
+    }
+
+    public void setConnectionInfo(ConnectionDto connectionInfo) {
+        if (connectionInfo != null) {
+            this.connectionInfo = connectionInfo;
         }
     }
 

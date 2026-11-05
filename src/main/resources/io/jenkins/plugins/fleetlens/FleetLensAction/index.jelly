@@ -22,7 +22,7 @@
 
         <!-- Pre-hydrated initial telemetry state -->
         <script type="application/json" id="fleetlens-initial-data">
-          ${it.initialStateJson}
+          <j:out value="${it.initialStateJson}"/>
         </script>
 
         <!-- Fleet Header -->

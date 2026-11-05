@@ -218,6 +218,9 @@
           updateKpis(state.overview);
           updateProvisionerCounts(state.overview.provisionerCounts, state.overview.totalAgents);
           render();
+          if (window.__AUTO_OPEN_CONNECT__) {
+            openConnectModal(window.__AUTO_OPEN_CONNECT__);
+          }
         }
       } catch (err) {
         console.warn('[Modern Agent Viewer] Error reading pre-hydrated state:', err);
@@ -1367,9 +1370,10 @@
     const commands = [];
     const provId = (agent.provisioner && agent.provisioner.id) || 'static';
     const osFam = (agent.os && agent.os.family) || 'OTHER';
+    const isWin = osFam === 'WINDOWS';
+    const isMac = osFam === 'MACOS';
     const ip = agent.ipAddress || '';
     const host = agent.hostName || '';
-    const targetHost = ip || host || agent.name;
     const isBuiltIn = agent.name === '(built-in)';
     const details = (agent.provisioner && agent.provisioner.details) || {};
 
@@ -1377,7 +1381,9 @@
       commands.push({
         title: 'Docker Controller Exec',
         desc: 'Open an interactive root bash terminal inside the running Jenkins Controller container:',
-        cmd: 'docker exec -it jenkins-controller /bin/bash'
+        cmd: 'docker exec -it jenkins-controller /bin/bash',
+        isPrimary: true,
+        badge: 'Controller Root'
       });
       commands.push({
         title: 'Controller Application Logs',
@@ -1392,16 +1398,67 @@
       return commands;
     }
 
+    const conn = agent.connectionInfo || {};
+    const resolvedUser = conn.sshUser || (isWin ? 'Administrator' : (provId === 'aws-ec2' ? 'ec2-user' : (isMac ? 'admin' : 'jenkins')));
+    const resolvedHost = conn.sshHost || ip || host || agent.name;
+    const resolvedPort = (conn.sshPort && conn.sshPort > 0) ? conn.sshPort : 22;
+    const portArg = resolvedPort !== 22 ? (' -p ' + resolvedPort) : '';
+    const scpPortArg = resolvedPort !== 22 ? (' -P ' + resolvedPort) : '';
+    const userSource = conn.userResolutionSource || '';
+    let addedPrimary = false;
+
+    // 1. Authoritative Primary Command (Inbound CLI or Direct SSH)
+    if (conn.primaryCommand) {
+      addedPrimary = true;
+      if (conn.primaryCommandType === 'INBOUND_CLI') {
+        commands.push({
+          title: 'Inbound Agent Launch (Authentic Secret Token)',
+          badge: 'Recommended',
+          badgeSource: 'HMAC Secret (jnlpMac)',
+          desc: 'Execute on the agent host to establish remoting session with authentic cryptographic secret:',
+          cmd: conn.primaryCommand,
+          isPrimary: true
+        });
+        if (isWin) {
+          const rootUrl = conn.jnlpUrl ? conn.jnlpUrl.replace(/\/computer\/[^\/]+\/slave-agent\.jnlp$/, '/') : 'http://localhost:8080/';
+          const psCmd = 'Invoke-WebRequest -Uri "' + (conn.jnlpJarUrl || (rootUrl + 'jnlpJars/agent.jar')) + '" -OutFile agent.jar; java -jar agent.jar -url ' + rootUrl + ' -secret ' + conn.jnlpSecret + ' -name "' + agent.name + '"' + (agent.remoteFs ? ' -workDir "' + agent.remoteFs + '"' : '');
+          commands.push({
+            title: 'PowerShell Inbound Launch',
+            badge: 'Windows',
+            desc: 'Download agent.jar and launch remoting via Windows PowerShell:',
+            cmd: psCmd
+          });
+        }
+        if (conn.jnlpSecret) {
+          commands.push({
+            title: 'Agent HMAC Secret Token',
+            badge: 'Secret Only',
+            desc: 'Cryptographic authentication token for systemd, supervisor, or custom launch scripts:',
+            cmd: conn.jnlpSecret
+          });
+        }
+      } else {
+        commands.push({
+          title: 'Direct SSH Session',
+          badge: 'Recommended',
+          badgeSource: userSource ? ('User: ' + userSource) : ('Port ' + resolvedPort),
+          desc: 'Open secure interactive terminal connection to ' + resolvedHost + (userSource ? (' using resolved user [' + resolvedUser + ']') : '') + ':',
+          cmd: conn.primaryCommand,
+          isPrimary: true
+        });
+      }
+    }
+
     if (provId === 'aws-ec2' || provId === 'aws-ecs' || details['Instance ID'] || details['InstanceId']) {
       const instanceId = details['Instance ID'] || details['InstanceId'] || '<instance-id>';
       const region = details['Region'] || details['aws.region'] || 'us-east-1';
-      const sshUser = osFam === 'WINDOWS' ? 'Administrator' : (osFam === 'LINUX' ? 'ec2-user' : 'admin');
 
-      if (ip || host) {
+      if (!addedPrimary || conn.primaryCommandType !== 'SSH') {
         commands.push({
           title: 'Direct SSH via Key Pair',
-          desc: 'Connect directly to the EC2 agent instance on port 22 (' + sshUser + '@' + targetHost + '):',
-          cmd: 'ssh -i ~/.ssh/jenkins-ec2-key.pem ' + sshUser + '@' + targetHost
+          badge: userSource ? 'Resolved: ' + resolvedUser : null,
+          desc: 'Connect directly to the EC2 agent instance (' + resolvedUser + '@' + resolvedHost + '):',
+          cmd: 'ssh' + portArg + ' -i ~/.ssh/jenkins-ec2-key.pem ' + resolvedUser + '@' + resolvedHost
         });
       }
 
@@ -1417,11 +1474,11 @@
         cmd: 'aws ec2 describe-instances --instance-ids ' + instanceId + ' --region ' + region + ' --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]"'
       });
 
-      if (osFam === 'WINDOWS') {
+      if (isWin) {
         commands.push({
           title: 'PowerShell Remoting (WinRM)',
           desc: 'Connect to Windows EC2 agent via PowerShell remoting session:',
-          cmd: 'Enter-PSSession -ComputerName ' + targetHost + ' -Credential (Get-Credential) -UseSSL'
+          cmd: 'Enter-PSSession -ComputerName ' + resolvedHost + ' -Credential (Get-Credential) -UseSSL'
         });
       }
 
@@ -1431,45 +1488,44 @@
     if (provId === 'vsphere') {
       const vmName = details['VM Name'] || agent.name;
       const vcenterHost = details['Cloud'] || details['vSphere Cloud'] || '<vcenter-server>';
-      if (osFam === 'WINDOWS') {
+      if (isWin) {
         commands.push({
           title: 'Remote Desktop (RDP)',
-          desc: 'Launch Windows Remote Desktop connection directly to ' + targetHost + ':',
-          cmd: 'mstsc /v:' + targetHost
+          desc: 'Launch Windows Remote Desktop connection directly to ' + resolvedHost + ':',
+          cmd: 'mstsc /v:' + resolvedHost
         });
         commands.push({
           title: 'PowerShell Remoting (WinRM)',
-          desc: 'Open remote interactive PowerShell session to ' + targetHost + ':',
-          cmd: 'Enter-PSSession -ComputerName ' + targetHost + ' -Credential (Get-Credential)'
+          desc: 'Open remote interactive PowerShell session to ' + resolvedHost + ':',
+          cmd: 'Enter-PSSession -ComputerName ' + resolvedHost + ' -Credential (Get-Credential)'
         });
         commands.push({
           title: 'Network Port Connectivity Check (RDP/WinRM)',
-          desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + targetHost + ':',
-          cmd: 'Test-NetConnection -ComputerName ' + targetHost + ' -Port 3389'
+          desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + resolvedHost + ':',
+          cmd: 'Test-NetConnection -ComputerName ' + resolvedHost + ' -Port 3389'
         });
-        if (ip || host) {
+        commands.push({
+          title: 'OpenSSH for Windows',
+          desc: 'Direct SSH session to Windows guest (' + resolvedUser + '@' + resolvedHost + '):',
+          cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + resolvedHost
+        });
+      } else {
+        if (!addedPrimary || conn.primaryCommandType !== 'SSH') {
           commands.push({
-            title: 'OpenSSH for Windows',
-            desc: 'Direct SSH session to Windows guest (if OpenSSH feature enabled):',
-            cmd: 'ssh Administrator@' + targetHost
+            title: 'Direct SSH Session',
+            desc: 'Open secure terminal session to vSphere VM (' + resolvedUser + '@' + resolvedHost + '):',
+            cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + resolvedHost
           });
         }
-      } else {
-        const sshUser = 'jenkins';
-        commands.push({
-          title: 'Direct SSH Session',
-          desc: 'Open secure terminal session to vSphere VM at ' + targetHost + ':',
-          cmd: 'ssh ' + sshUser + '@' + targetHost
-        });
         commands.push({
           title: 'SSH with Private Key',
-          desc: 'Connect with identity key pair:',
-          cmd: 'ssh -i ~/.ssh/id_rsa ' + sshUser + '@' + targetHost
+          desc: 'Connect with identity key pair (' + resolvedUser + '@' + resolvedHost + '):',
+          cmd: 'ssh' + portArg + ' -i ~/.ssh/id_rsa ' + resolvedUser + '@' + resolvedHost
         });
         commands.push({
           title: 'SCP File Transfer',
           desc: 'Transfer files to VM workspace or temp directory:',
-          cmd: 'scp ./build-artifact.tar.gz ' + sshUser + '@' + targetHost + ':' + (agent.remoteFs || '/tmp') + '/'
+          cmd: 'scp' + scpPortArg + ' ./build-artifact.tar.gz ' + resolvedUser + '@' + resolvedHost + ':' + (agent.remoteFs || '/tmp') + '/'
         });
       }
       commands.push({
@@ -1500,8 +1556,8 @@
       if (ip || host) {
         commands.push({
           title: 'Direct SSH to Agent Node',
-          desc: 'Connect directly to the host or container IP (' + targetHost + '):',
-          cmd: 'ssh jenkins@' + targetHost
+          desc: 'Connect directly to the host or container IP (' + resolvedHost + '):',
+          cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + resolvedHost
         });
       }
       return commands;
@@ -1530,7 +1586,7 @@
       return commands;
     }
 
-    if ((provId === 'docker' || provId === 'swarm') && osFam !== 'WINDOWS') {
+    if ((provId === 'docker' || provId === 'swarm') && !isWin) {
       let containerRef = host.replace('.jenkins-net', '').replace(/:\d+$/, '');
       if (!containerRef || containerRef.startsWith('172.') || containerRef.startsWith('10.')) {
         containerRef = agent.name;
@@ -1553,55 +1609,59 @@
       if (ip) {
         commands.push({
           title: 'SSH to Container (Bridge Network)',
-          desc: 'Connect over internal bridge network (' + ip + '):',
-          cmd: 'ssh -p 22 jenkins@' + ip
+          badge: userSource ? 'User: ' + resolvedUser : null,
+          desc: 'Connect over internal bridge network (' + ip + ') as ' + resolvedUser + ':',
+          cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + ip
         });
       }
       return commands;
     }
 
-    if (osFam === 'WINDOWS') {
+    if (isWin) {
       commands.push({
         title: 'Remote Desktop (RDP)',
-        desc: 'Launch Windows Remote Desktop connection directly to ' + targetHost + ':',
-        cmd: 'mstsc /v:' + targetHost
+        desc: 'Launch Windows Remote Desktop connection directly to ' + resolvedHost + ':',
+        cmd: 'mstsc /v:' + resolvedHost
       });
       commands.push({
         title: 'PowerShell Remoting (WinRM)',
-        desc: 'Open remote interactive PowerShell session to ' + targetHost + ':',
-        cmd: 'Enter-PSSession -ComputerName ' + targetHost + ' -Credential (Get-Credential)'
+        desc: 'Open remote interactive PowerShell session to ' + resolvedHost + ':',
+        cmd: 'Enter-PSSession -ComputerName ' + resolvedHost + ' -Credential (Get-Credential)'
       });
       commands.push({
         title: 'Network Port Connectivity Check (RDP/WinRM)',
-        desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + targetHost + ':',
-        cmd: 'Test-NetConnection -ComputerName ' + targetHost + ' -Port 3389'
+        desc: 'Test network reachability to RDP (3389) or WinRM (5985) ports on ' + resolvedHost + ':',
+        cmd: 'Test-NetConnection -ComputerName ' + resolvedHost + ' -Port 3389'
       });
       if (ip || host) {
         commands.push({
           title: 'OpenSSH for Windows',
-          desc: 'Direct SSH session (if OpenSSH Server feature is enabled on Windows):',
-          cmd: 'ssh Administrator@' + targetHost
+          badge: userSource ? 'User: ' + resolvedUser : null,
+          desc: 'Direct SSH session to Windows host (' + resolvedUser + '@' + resolvedHost + '):',
+          cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + resolvedHost
         });
       }
       return commands;
     }
 
-    if (ip || host) {
-      const defaultUser = osFam === 'MACOS' ? 'admin' : 'jenkins';
-      commands.push({
-        title: 'SSH Terminal Session',
-        desc: 'Open secure interactive terminal connection to ' + targetHost + ':',
-        cmd: 'ssh ' + defaultUser + '@' + targetHost
-      });
+    if (ip || host || resolvedHost) {
+      if (!addedPrimary || conn.primaryCommandType !== 'SSH') {
+        commands.push({
+          title: 'SSH Terminal Session',
+          badge: userSource ? 'User: ' + resolvedUser : null,
+          desc: 'Open secure interactive terminal connection to ' + resolvedHost + (userSource ? (' (' + userSource + ')') : '') + ':',
+          cmd: 'ssh' + portArg + ' ' + resolvedUser + '@' + resolvedHost
+        });
+      }
       commands.push({
         title: 'SSH with Custom Identity File',
-        desc: 'Specify SSH private key for authentication:',
-        cmd: 'ssh -i ~/.ssh/id_rsa ' + defaultUser + '@' + targetHost
+        desc: 'Specify SSH private key for authentication (' + resolvedUser + '@' + resolvedHost + '):',
+        cmd: 'ssh' + portArg + ' -i ~/.ssh/id_rsa ' + resolvedUser + '@' + resolvedHost
       });
       commands.push({
         title: 'SCP File Transfer',
         desc: 'Upload files to agent workspace or temp directory:',
-        cmd: 'scp ./build-artifact.tar.gz ' + defaultUser + '@' + targetHost + ':' + (agent.remoteFs || '/tmp') + '/'
+        cmd: 'scp' + scpPortArg + ' ./build-artifact.tar.gz ' + resolvedUser + '@' + resolvedHost + ':' + (agent.remoteFs || '/tmp') + '/'
       });
       return commands;
     }
@@ -1614,7 +1674,7 @@
     commands.push({
       title: 'Ping / Network Reachability',
       desc: 'Check ICMP reachability to node host from controller:',
-      cmd: 'ping -c 4 ' + targetHost
+      cmd: 'ping -c 4 ' + resolvedHost
     });
     return commands;
   }
@@ -1698,6 +1758,7 @@
           } else {
             setTimeout(() => { btn.classList.remove('copied'); }, 1800);
           }
+          showToast('Connection command copied to clipboard', 'success');
         });
       });
     }
@@ -1730,6 +1791,9 @@
     const osFamily = agent.os ? agent.os.family : 'OTHER';
     const osPretty = agent.os ? agent.os.prettyName : 'Unknown OS';
     const osIcon = getOsIconSvg(osFamily);
+    const conn = agent.connectionInfo || {};
+    const resolvedUser = conn.sshUser;
+    const userSource = conn.userResolutionSource;
 
     if (el.connectModalBadges) {
       el.connectModalBadges.innerHTML = `
@@ -1737,25 +1801,33 @@
         <span class="os-badge">${osIcon} ${escapeHtml(osPretty)}</span>
         ${agent.ipAddress ? `<span class="node-meta-chip">IP: ${escapeHtml(agent.ipAddress)}</span>` : ''}
         ${agent.hostName && agent.hostName !== agent.ipAddress ? `<span class="node-meta-chip">Host: ${escapeHtml(agent.hostName)}</span>` : ''}
+        ${resolvedUser ? `
+          <span class="node-meta-chip connect-user-chip" title="Resolved user identity: ${escapeHtml(resolvedUser)} (Source: ${escapeHtml(userSource || 'Default')})">
+            <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            User: <strong>${escapeHtml(resolvedUser)}</strong>${userSource ? ` <span class="connect-source-mini">(${escapeHtml(userSource)})</span>` : ''}
+          </span>
+        ` : ''}
       `;
     }
 
     const commands = getConnectCommands(agent);
     if (el.connectCommandsContainer) {
       el.connectCommandsContainer.innerHTML = commands.map(c => `
-        <div class="connect-command-card">
+        <div class="connect-command-card ${c.isPrimary ? 'connect-command-card--primary' : ''}">
           <div class="connect-command-header">
             <div class="connect-command-title">
               <svg class="fl-svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-              ${escapeHtml(c.title)}
+              <span>${escapeHtml(c.title)}</span>
+              ${c.badge ? `<span class="connect-badge-pill">${escapeHtml(c.badge)}</span>` : ''}
+              ${c.badgeSource ? `<span class="connect-source-pill" title="Resolution Source">${escapeHtml(c.badgeSource)}</span>` : ''}
             </div>
             <span class="connect-command-desc">${escapeHtml(c.desc)}</span>
           </div>
           <div class="connect-code-box">
             <code class="connect-code">${escapeHtml(c.cmd)}</code>
-            <button class="btn-copy-code btn-copy" data-copy="${escapeHtml(c.cmd)}" title="Copy command to clipboard" type="button">
+            <button class="btn-copy-code btn-copy ${c.isPrimary ? 'btn-copy-primary' : ''}" data-copy="${escapeHtml(c.cmd)}" title="1-Click Copy command to clipboard" type="button">
               <svg class="fl-svg-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              <span>Copy</span>
+              <span>${c.isPrimary ? '1-Click Copy' : 'Copy'}</span>
             </button>
           </div>
         </div>

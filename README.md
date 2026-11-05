@@ -93,6 +93,18 @@ Automatically inspects runtime characteristics, cloud descriptors, and class hie
 
 ---
 
+### 10. Intelligent SSH Identity Resolution & 1-Click Connection Helper
+- **Multi-Tier Identity Resolution:** Eliminates hardcoded or guessed usernames by analyzing:
+  1. *SSHLauncher Credentials Reflection:* Reads authoritatively configured credentials (`StandardUsernameCredentials`) and custom SSH port directly from the launcher.
+  2. *Runtime Remoting Telemetry:* Probes agent JVM `user.name` and maintains a persistent cache when agents disconnect.
+  3. *Workspace Path Heuristics:* Inters authentic user accounts from filesystem remoteFS roots (`/Users/<user>/...`, `/home/<user>/...`, `C:\Users\<user>\...`).
+  4. *Cloud Provider Descriptors:* Inspects AWS EC2 `RemoteAdmin` metadata and provider settings.
+  5. *Intelligent OS Defaults:* Sensible fallbacks when completely unconfigured (`Administrator` on Windows, `jenkins` on Linux, `admin` on macOS).
+- **Authentic HMAC Secret Token:** Generates copy-pasteable Inbound Agent CLI and PowerShell commands with the node's authentic cryptographic `jnlpMac` token.
+- **1-Click Clipboard Recipes:** Featured hero card with a prominent "1-Click Copy" button and clear resolution source badge (e.g., `Identity: jenkins (via Workspace Path)`). Includes secondary recipes for SSH with private keys, SCP file uploads, RDP, WinRM, and AWS SSM sessions.
+
+---
+
 ## Configuration as Code (JCasC)
 
 ```yaml

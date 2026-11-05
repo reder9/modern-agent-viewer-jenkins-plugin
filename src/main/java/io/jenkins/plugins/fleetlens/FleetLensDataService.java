@@ -214,6 +214,9 @@ public class FleetLensDataService {
             }
         }
 
+        // Connection metadata & SSH Identity
+        dto.setConnectionInfo(io.jenkins.plugins.fleetlens.monitoring.AgentConnectionService.resolveConnection(computer, node, ip, dto.getOs()));
+
         // Labels
         if (node != null) {
             List<String> labelNames = node.getAssignedLabels()

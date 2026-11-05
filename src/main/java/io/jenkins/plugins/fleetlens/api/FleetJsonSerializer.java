@@ -176,6 +176,22 @@ public class FleetJsonSerializer {
         }
         json.put("labels", labelsArray);
 
+        // Connection Info & SSH Identity
+        io.jenkins.plugins.fleetlens.api.dto.ConnectionDto conn = agent.getConnectionInfo();
+        if (conn != null) {
+            JSONObject connJson = new JSONObject();
+            connJson.put("sshUser", conn.getSshUser() != null ? conn.getSshUser() : "");
+            connJson.put("sshHost", conn.getSshHost() != null ? conn.getSshHost() : "");
+            connJson.put("sshPort", conn.getSshPort());
+            connJson.put("userResolutionSource", conn.getUserResolutionSource() != null ? conn.getUserResolutionSource() : "");
+            connJson.put("jnlpSecret", conn.getJnlpSecret() != null ? conn.getJnlpSecret() : "");
+            connJson.put("jnlpUrl", conn.getJnlpUrl() != null ? conn.getJnlpUrl() : "");
+            connJson.put("jnlpJarUrl", conn.getJnlpJarUrl() != null ? conn.getJnlpJarUrl() : "");
+            connJson.put("primaryCommand", conn.getPrimaryCommand() != null ? conn.getPrimaryCommand() : "");
+            connJson.put("primaryCommandType", conn.getPrimaryCommandType() != null ? conn.getPrimaryCommandType() : "");
+            json.put("connectionInfo", connJson);
+        }
+
         return json;
     }
 
