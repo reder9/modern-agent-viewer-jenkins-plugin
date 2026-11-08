@@ -84,13 +84,25 @@ public class AgentOsDetector {
             return offlineDto;
         }
 
-        // Online path: if warmup hasn't finished yet, kick it off in the background
-        // and return fast non-blocking system properties without waiting on FetchOsInfoCallable RPC
+        // Online path: trigger background warmup if not already running or cached
         warmupAsync(computer);
         if (cached != null && cached.onlineWhenSampled) {
             return cached.dto;
         }
-        return probeOnlineOs(computer, nodeName, false);
+
+        // Fast non-blocking controller JVM path (zero RPC)
+        if (computer.getName().isEmpty()) {
+            return probeOnlineOs(computer, nodeName, false);
+        }
+
+        // Fast in-memory node label fallback while background probe completes asynchronously
+        OsDto labelDto = resolveOfflineOs(computer);
+        if (!"OTHER".equals(labelDto.getFamily())) {
+            return labelDto;
+        }
+
+        // Return safe fallback without blocking HTTP thread on remoting RPC
+        return new OsDto("OTHER", "Unknown", "Unknown OS", "", "", "symbol-help");
     }
 
     private static OsDto resolveOfflineOs(Computer computer) {

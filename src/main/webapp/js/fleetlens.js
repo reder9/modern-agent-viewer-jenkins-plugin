@@ -167,6 +167,103 @@
     kpiSubStorage: document.getElementById('kpi-sub-storage')
   };
 
+  // URL Deep-Linking & Parameter State Sync
+  function restoreUrlState() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get('q');
+      const status = params.get('status');
+      const prov = params.get('prov');
+      const os = params.get('os');
+      const view = params.get('view');
+
+      if (q !== null && q !== undefined) {
+        state.filters.search = q.trim().toLowerCase();
+        if (el.searchInput) {
+          el.searchInput.value = q;
+        }
+        if (el.searchClear) {
+          el.searchClear.style.display = state.filters.search ? 'block' : 'none';
+        }
+      }
+      if (status) {
+        const upper = status.toUpperCase();
+        if (['ALL', 'ONLINE', 'OFFLINE', 'BUSY', 'IDLE', 'TEMPORARILY_OFFLINE', 'STORAGE_ALERT'].indexOf(upper) !== -1) {
+          state.filters.status = upper;
+          if (el.filterStatus) {
+            el.filterStatus.value = upper;
+          }
+        }
+      }
+      if (prov) {
+        state.filters.provisioner = prov.toUpperCase();
+        if (el.filterProvPills) {
+          el.filterProvPills.querySelectorAll('.filter-pill').forEach(p => {
+            p.classList.toggle('active', p.getAttribute('data-prov') === state.filters.provisioner);
+          });
+        }
+      }
+      if (os) {
+        state.filters.os = os.toUpperCase();
+        if (el.filterOsChips) {
+          el.filterOsChips.querySelectorAll('.filter-chip').forEach(p => {
+            p.classList.toggle('active', p.getAttribute('data-os') === state.filters.os);
+          });
+        }
+      }
+      if (view === 'cards' || view === 'table') {
+        state.viewMode = view;
+        if (el.viewBtnCards && el.viewBtnTable) {
+          el.viewBtnCards.classList.toggle('active', view === 'cards');
+          el.viewBtnTable.classList.toggle('active', view === 'table');
+        }
+      }
+    } catch (e) {
+      console.warn('[Modern Agent Viewer] Could not restore URL parameters', e);
+    }
+  }
+
+  function syncUrlState() {
+    try {
+      const url = new URL(window.location.href);
+      if (state.filters.search) {
+        url.searchParams.set('q', state.filters.search);
+      } else {
+        url.searchParams.delete('q');
+      }
+
+      if (state.filters.status && state.filters.status !== 'ALL') {
+        url.searchParams.set('status', state.filters.status);
+      } else {
+        url.searchParams.delete('status');
+      }
+
+      if (state.filters.provisioner && state.filters.provisioner !== 'ALL') {
+        url.searchParams.set('prov', state.filters.provisioner);
+      } else {
+        url.searchParams.delete('prov');
+      }
+
+      if (state.filters.os && state.filters.os !== 'ALL') {
+        url.searchParams.set('os', state.filters.os);
+      } else {
+        url.searchParams.delete('os');
+      }
+
+      if (state.viewMode && state.viewMode !== INITIAL_VIEW) {
+        url.searchParams.set('view', state.viewMode);
+      } else {
+        url.searchParams.delete('view');
+      }
+
+      const query = url.searchParams.toString();
+      const newUrl = url.pathname + (query ? ('?' + query) : '') + url.hash;
+      window.history.replaceState(null, '', newUrl);
+    } catch (e) {
+      // Ignore if history API is restricted
+    }
+  }
+
   // Theme Synchronizer for seamless Dark/Light Mode Adaptability
   function setupThemeSync() {
     function syncTheme() {
@@ -204,6 +301,12 @@
   function init() {
     setupThemeSync();
     setupEventListeners();
+    restoreUrlState();
+
+    window.addEventListener('popstate', function() {
+      restoreUrlState();
+      render();
+    });
 
     // Check pre-hydrated state for instant 0ms rendering
     let hasPrehydratedState = false;
@@ -248,22 +351,30 @@
   }
 
   function setupEventListeners() {
-    // Search
+    // Search with 120ms input debounce
+    let searchDebounceTimer = null;
     if (el.searchInput) {
       el.searchInput.addEventListener('input', function(e) {
-        state.filters.search = e.target.value.trim().toLowerCase();
+        const val = e.target.value.trim().toLowerCase();
         if (el.searchClear) {
-          el.searchClear.style.display = state.filters.search ? 'block' : 'none';
+          el.searchClear.style.display = val ? 'block' : 'none';
         }
-        render();
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(function() {
+          state.filters.search = val;
+          syncUrlState();
+          render();
+        }, 120);
       });
     }
 
     if (el.searchClear) {
       el.searchClear.addEventListener('click', function() {
+        clearTimeout(searchDebounceTimer);
         el.searchInput.value = '';
         state.filters.search = '';
         el.searchClear.style.display = 'none';
+        syncUrlState();
         render();
       });
     }
@@ -272,6 +383,7 @@
     if (el.filterStatus) {
       el.filterStatus.addEventListener('change', function(e) {
         state.filters.status = e.target.value;
+        syncUrlState();
         render();
       });
     }
@@ -284,6 +396,7 @@
         el.filterProvPills.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         state.filters.provisioner = btn.getAttribute('data-prov');
+        syncUrlState();
         render();
       });
     }
@@ -296,6 +409,7 @@
         el.filterOsChips.querySelectorAll('.filter-chip').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         state.filters.os = btn.getAttribute('data-os');
+        syncUrlState();
         render();
       });
     }
@@ -306,6 +420,7 @@
         state.viewMode = 'cards';
         el.viewBtnCards.classList.add('active');
         el.viewBtnTable.classList.remove('active');
+        syncUrlState();
         render();
       });
     }
@@ -315,6 +430,7 @@
         state.viewMode = 'table';
         el.viewBtnTable.classList.add('active');
         el.viewBtnCards.classList.remove('active');
+        syncUrlState();
         render();
       });
     }
@@ -471,6 +587,7 @@
           el.searchInput.value = '';
           state.filters.search = '';
           if (el.searchClear) el.searchClear.style.display = 'none';
+          syncUrlState();
           render();
         }
       }
@@ -502,8 +619,11 @@
       updateProvisionerCounts(state.overview.provisionerCounts, state.overview.totalAgents);
     }
 
+    syncUrlState();
     render();
   }
+
+  let isPageVisible = !document.hidden;
 
   function setRefreshTimer(seconds) {
     state.refreshInterval = seconds;
@@ -511,10 +631,26 @@
       clearInterval(state.timerId);
       state.timerId = null;
     }
-    if (seconds > 0) {
+    if (seconds > 0 && isPageVisible) {
       state.timerId = setInterval(fetchFleetData, seconds * 1000);
     }
   }
+
+  // Page Visibility: pause polling when tab is hidden, refresh immediately on focus
+  document.addEventListener('visibilitychange', function() {
+    isPageVisible = !document.hidden;
+    if (document.hidden) {
+      if (state.timerId) {
+        clearInterval(state.timerId);
+        state.timerId = null;
+      }
+    } else {
+      if (Date.now() - state.lastUpdated > 30000) {
+        fetchFleetData();
+      }
+      setRefreshTimer(state.refreshInterval);
+    }
+  });
 
   function updateLastUpdatedTime() {
     if (!el.lastUpdatedText) return;
@@ -1258,6 +1394,7 @@
           el.searchInput.value = label;
           state.filters.search = label.toLowerCase();
           if (el.searchClear) el.searchClear.style.display = 'block';
+          syncUrlState();
           render();
         }
       });

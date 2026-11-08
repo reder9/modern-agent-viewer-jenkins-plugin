@@ -12,8 +12,10 @@ import jenkins.model.Jenkins;
 import hudson.slaves.Cloud;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -43,6 +45,7 @@ public class QueueInspectionService {
         int blocked = 0;
         int buildable = 0;
         long now = System.currentTimeMillis();
+        Map<String, LabelMatchSummary> labelSummaryMemo = new HashMap<>();
 
         for (Queue.Item item : items) {
             if (item == null) {
@@ -74,13 +77,14 @@ public class QueueInspectionService {
             if (isBlocked) blocked++;
             if (isBuildable) buildable++;
 
-            // Label analysis
+            // Label analysis with memoization for O(1) duplicate label lookups
             Label assignedLabel = item.getAssignedLabel();
             String labelStr = assignedLabel != null ? assignedLabel.getExpression() : null;
             dto.setAssignedLabel(labelStr);
 
-            // Match nodes
-            analyzeMatchingNodes(jenkins, assignedLabel, dto);
+            String memoKey = labelStr != null ? labelStr : "__ALL_NODES__";
+            LabelMatchSummary summary = labelSummaryMemo.computeIfAbsent(memoKey, k -> computeLabelMatchSummary(jenkins, assignedLabel));
+            applyLabelMatchSummary(summary, dto);
 
             itemDtos.add(dto);
         }
@@ -94,7 +98,25 @@ public class QueueInspectionService {
         return overview;
     }
 
-    private static void analyzeMatchingNodes(Jenkins jenkins, Label label, QueueItemDto dto) {
+    private static class LabelMatchSummary {
+        final int totalMatching;
+        final int onlineCount;
+        final int idleExec;
+        final int busyExec;
+        final List<String> nodeNames;
+        final String provCloudName;
+
+        LabelMatchSummary(int totalMatching, int onlineCount, int idleExec, int busyExec, List<String> nodeNames, String provCloudName) {
+            this.totalMatching = totalMatching;
+            this.onlineCount = onlineCount;
+            this.idleExec = idleExec;
+            this.busyExec = busyExec;
+            this.nodeNames = nodeNames;
+            this.provCloudName = provCloudName;
+        }
+    }
+
+    private static LabelMatchSummary computeLabelMatchSummary(Jenkins jenkins, Label label) {
         Set<Node> candidateNodes;
         if (label != null) {
             candidateNodes = label.getNodes();
@@ -130,51 +152,57 @@ public class QueueInspectionService {
         }
 
         Collections.sort(nodeNames);
-        dto.setMatchingNodesCount(totalMatching);
-        dto.setOnlineMatchingNodesCount(onlineCount);
-        dto.setIdleExecutorsCount(idleExec);
-        dto.setBusyExecutorsCount(busyExec);
-        dto.setMatchingNodeNames(nodeNames);
+
+        String provCloudName = null;
+        if (totalMatching == 0 && label != null && jenkins.clouds != null) {
+            for (Cloud cloud : jenkins.clouds) {
+                try {
+                    if (cloud.canProvision(label)) {
+                        provCloudName = cloud.getDisplayName();
+                        if (provCloudName == null || provCloudName.isEmpty()) {
+                            provCloudName = cloud.name;
+                        }
+                        break;
+                    }
+                } catch (RuntimeException ignored) {
+                    // ignore cloud check failure
+                }
+            }
+        }
+
+        return new LabelMatchSummary(totalMatching, onlineCount, idleExec, busyExec, nodeNames, provCloudName);
+    }
+
+    private static void applyLabelMatchSummary(LabelMatchSummary summary, QueueItemDto dto) {
+        dto.setMatchingNodesCount(summary.totalMatching);
+        dto.setOnlineMatchingNodesCount(summary.onlineCount);
+        dto.setIdleExecutorsCount(summary.idleExec);
+        dto.setBusyExecutorsCount(summary.busyExec);
+        dto.setMatchingNodeNames(summary.nodeNames);
 
         // Determine bottleneck reason & human message
         String labelDisplay = dto.getAssignedLabel() != null ? "'" + dto.getAssignedLabel() + "'" : "any agent";
 
-        if (totalMatching == 0) {
-            String provCloudName = null;
-            if (label != null) {
-                for (Cloud cloud : jenkins.clouds) {
-                    try {
-                        if (cloud.canProvision(label)) {
-                            provCloudName = cloud.getDisplayName();
-                            if (provCloudName == null || provCloudName.isEmpty()) {
-                                provCloudName = cloud.name;
-                            }
-                            break;
-                        }
-                    } catch (RuntimeException ignored) {
-                        // ignore cloud check failure
-                    }
-                }
-            }
-            if (provCloudName != null) {
+        if (summary.totalMatching == 0) {
+            if (summary.provCloudName != null) {
                 dto.setBottleneckReason("PROVISIONING_CLOUD");
-                dto.setBottleneckMessage("Provisioning ephemeral machine via " + provCloudName + " (" + labelDisplay + ")");
+                dto.setBottleneckMessage("Provisioning ephemeral machine via " + summary.provCloudName + " (" + labelDisplay + ")");
             } else {
                 dto.setBottleneckReason("NO_MATCHING_NODES");
                 dto.setBottleneckMessage("No machines configured with label " + labelDisplay);
             }
-        } else if (onlineCount == 0) {
+        } else if (summary.onlineCount == 0) {
             dto.setBottleneckReason("ALL_NODES_OFFLINE");
-            dto.setBottleneckMessage(totalMatching + " matching " + (totalMatching == 1 ? "machine is" : "machines are") + " OFFLINE");
-        } else if (idleExec == 0) {
+            dto.setBottleneckMessage(summary.totalMatching + " matching " + (summary.totalMatching == 1 ? "machine is" : "machines are") + " OFFLINE");
+        } else if (summary.idleExec == 0) {
             dto.setBottleneckReason("ALL_EXECUTORS_BUSY");
-            dto.setBottleneckMessage("All " + busyExec + " executors on " + onlineCount + " matching " + (onlineCount == 1 ? "node are busy" : "nodes are busy"));
+            dto.setBottleneckMessage("All " + summary.busyExec + " executors on " + summary.onlineCount + " matching " + (summary.onlineCount == 1 ? "node are busy" : "nodes are busy"));
         } else if (dto.isBlocked()) {
             dto.setBottleneckReason("BLOCKED");
             dto.setBottleneckMessage(dto.getWhy() != null ? dto.getWhy() : "Build is blocked by dependencies");
         } else {
             dto.setBottleneckReason("READY");
-            dto.setBottleneckMessage(idleExec + " idle " + (idleExec == 1 ? "executor available" : "executors available") + ", starting shortly");
+            dto.setBottleneckMessage(summary.idleExec + " idle " + (summary.idleExec == 1 ? "executor available" : "executors available") + ", starting shortly");
         }
     }
 

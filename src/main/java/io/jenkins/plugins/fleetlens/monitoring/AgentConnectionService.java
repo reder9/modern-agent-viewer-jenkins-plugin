@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -66,12 +67,32 @@ public final class AgentConnectionService {
     private AgentConnectionService() {}
 
     /**
+     * Asynchronously warms up connection metadata and SSH identity in the background.
+     */
+    public static CompletableFuture<ConnectionDto> warmupAsync(Computer computer, Node node) {
+        if (computer == null) {
+            return null;
+        }
+        String nodeName = computer.getName();
+        String cacheKey = nodeName.isEmpty() ? "(controller)" : nodeName;
+        CachedConnection cached = CONNECTION_CACHE.get(cacheKey);
+        if (cached != null && (System.currentTimeMillis() - cached.timestamp) <= CONNECTION_CACHE_TTL_MS) {
+            return null;
+        }
+
+        return FleetLensTelemetryExecutor.submitDeduplicated("conn:" + cacheKey, () -> {
+            String ip = AgentNetworkService.resolveIpAddress(computer, node, null);
+            OsDto os = AgentOsDetector.detect(computer);
+            return resolveConnectionInternal(computer, node, ip, os, cacheKey, true);
+        });
+    }
+
+    /**
      * Resolves comprehensive connection details for a computer and node.
      */
     public static ConnectionDto resolveConnection(Computer computer, Node node, String ip, OsDto os) {
-        ConnectionDto dto = new ConnectionDto();
         if (computer == null) {
-            return dto;
+            return new ConnectionDto();
         }
 
         String nodeName = computer.getName();
@@ -83,6 +104,16 @@ public final class AgentConnectionService {
         if (cached != null && cached.matches(isOnline, ip, osFamily)) {
             return cached.dto;
         }
+
+        warmupAsync(computer, node);
+        return resolveConnectionInternal(computer, node, ip, os, cacheKey, false);
+    }
+
+    private static ConnectionDto resolveConnectionInternal(Computer computer, Node node, String ip, OsDto os, String cacheKey, boolean allowBlockingLookups) {
+        ConnectionDto dto = new ConnectionDto();
+        String nodeName = computer.getName();
+        boolean isOnline = computer.isOnline();
+        String osFamily = (os != null && os.getFamily() != null) ? os.getFamily() : "OTHER";
 
         ComputerLauncher launcher = getLauncher(computer, node);
 
@@ -134,7 +165,11 @@ public final class AgentConnectionService {
                     if (getCredIdMethod != null) {
                         Object cid = getCredIdMethod.invoke(launcher);
                         if (cid instanceof String && !((String) cid).trim().isEmpty()) {
-                            String found = lookupUsernameFromCredentialsId((String) cid);
+                            String cidStr = (String) cid;
+                            String found = null;
+                            if (allowBlockingLookups || CREDENTIALS_USER_CACHE.containsKey(cidStr)) {
+                                found = lookupUsernameFromCredentialsId(cidStr);
+                            }
                             if (found != null) {
                                 sshUser = found;
                                 userSource = "SSH Credentials ID";
@@ -149,17 +184,22 @@ public final class AgentConnectionService {
 
         // 2. Tier 2: Agent Runtime Remoting Telemetry (user.name from systemProperties)
         if (sshUser == null && isOnline) {
-            try {
-                Map<Object, Object> sysProps = computer.getSystemProperties();
-                if (sysProps != null && sysProps.containsKey("user.name")) {
-                    Object val = sysProps.get("user.name");
-                    if (val instanceof String && !((String) val).trim().isEmpty()) {
-                        sshUser = ((String) val).trim();
-                        userSource = "Agent Runtime Process (user.name)";
-                        RUNTIME_USER_CACHE.put(nodeName, sshUser);
+            if (RUNTIME_USER_CACHE.containsKey(nodeName)) {
+                sshUser = RUNTIME_USER_CACHE.get(nodeName);
+                userSource = "Cached Agent Process User";
+            } else if (allowBlockingLookups || computer.getName().isEmpty()) {
+                try {
+                    Map<Object, Object> sysProps = computer.getSystemProperties();
+                    if (sysProps != null && sysProps.containsKey("user.name")) {
+                        Object val = sysProps.get("user.name");
+                        if (val instanceof String && !((String) val).trim().isEmpty()) {
+                            sshUser = ((String) val).trim();
+                            userSource = "Agent Runtime Process (user.name)";
+                            RUNTIME_USER_CACHE.put(nodeName, sshUser);
+                        }
                     }
-                }
-            } catch (Exception ignored) {}
+                } catch (Exception ignored) {}
+            }
         }
 
         // Check cached runtime user if currently offline
@@ -252,7 +292,11 @@ public final class AgentConnectionService {
             dto.setPrimaryCommand("ssh " + portParam + sshUser + "@" + targetHost);
         }
 
-        CONNECTION_CACHE.put(cacheKey, new CachedConnection(dto, isOnline, ip, osFamily));
+        if (allowBlockingLookups) {
+            CONNECTION_CACHE.put(cacheKey, new CachedConnection(dto, isOnline, ip, osFamily));
+        } else {
+            CONNECTION_CACHE.putIfAbsent(cacheKey, new CachedConnection(dto, isOnline, ip, osFamily));
+        }
         return dto;
     }
 
@@ -373,8 +417,10 @@ public final class AgentConnectionService {
 
     public static void clearCache(String nodeName) {
         if (nodeName != null) {
+            String cacheKey = nodeName.isEmpty() ? "(controller)" : nodeName;
             RUNTIME_USER_CACHE.remove(nodeName);
             CONNECTION_CACHE.remove(nodeName);
+            CONNECTION_CACHE.remove(cacheKey);
         }
     }
 }

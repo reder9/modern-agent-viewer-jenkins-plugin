@@ -77,4 +77,32 @@ class QueueInspectionServiceTest {
         // Cancel item
         assertTrue(QueueInspectionService.cancelItem(item.getId()));
     }
+
+    @Test
+    void testMultipleQueueItemsMemoization(JenkinsRule j) throws Exception {
+        Label testLabel = Label.get("shared-compute-pool");
+        FreeStyleProject p1 = j.createFreeStyleProject("shared-job-1");
+        p1.setAssignedLabel(testLabel);
+        p1.scheduleBuild2(0);
+
+        FreeStyleProject p2 = j.createFreeStyleProject("shared-job-2");
+        p2.setAssignedLabel(testLabel);
+        p2.scheduleBuild2(0);
+
+        QueueOverviewDto overview = QueueInspectionService.inspectQueue();
+        assertNotNull(overview);
+        assertEquals(2, overview.getTotalWaiting());
+
+        QueueItemDto item1 = overview.getItems().get(0);
+        QueueItemDto item2 = overview.getItems().get(1);
+
+        assertEquals("shared-compute-pool", item1.getAssignedLabel());
+        assertEquals("shared-compute-pool", item2.getAssignedLabel());
+        assertEquals("NO_MATCHING_NODES", item1.getBottleneckReason());
+        assertEquals("NO_MATCHING_NODES", item2.getBottleneckReason());
+        assertEquals(item1.getBottleneckMessage(), item2.getBottleneckMessage());
+
+        assertTrue(QueueInspectionService.cancelItem(item1.getId()));
+        assertTrue(QueueInspectionService.cancelItem(item2.getId()));
+    }
 }
