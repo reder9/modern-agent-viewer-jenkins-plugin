@@ -12,6 +12,7 @@ import io.jenkins.plugins.fleetlens.api.dto.ExecutorSlotDto;
 import io.jenkins.plugins.fleetlens.api.dto.FleetOverviewDto;
 import io.jenkins.plugins.fleetlens.api.dto.ProvisionerDto;
 import io.jenkins.plugins.fleetlens.detector.AgentProvisionerDetector;
+import io.jenkins.plugins.fleetlens.monitoring.AgentJvmDetector;
 import io.jenkins.plugins.fleetlens.monitoring.AgentNetworkService;
 import io.jenkins.plugins.fleetlens.monitoring.AgentOsDetector;
 import io.jenkins.plugins.fleetlens.monitoring.AgentStorageService;
@@ -203,6 +204,9 @@ public class FleetLensDataService {
 
         // OS
         dto.setOs(AgentOsDetector.detect(computer));
+
+        // JVM runtime & controller version alignment
+        dto.setJvm(AgentJvmDetector.detect(computer));
 
         // Storage
         dto.setStorage(AgentStorageService.getStorageMetrics(computer, node));

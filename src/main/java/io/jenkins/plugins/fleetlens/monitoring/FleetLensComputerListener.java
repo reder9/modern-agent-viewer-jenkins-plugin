@@ -39,6 +39,7 @@ public class FleetLensComputerListener extends ComputerListener {
             AgentUptimeService.clearCache(name);
             AgentNetworkService.clearCache(name);
             AgentConnectionService.clearCache(name);
+            AgentJvmDetector.clearCache(name);
         }
     }
 }

@@ -47,6 +47,7 @@ public class FleetJsonSerializer {
             osCounts.put(entry.getKey(), entry.getValue());
         }
         json.put("osCounts", osCounts);
+        json.put("controllerJavaMajorVersion", io.jenkins.plugins.fleetlens.monitoring.AgentJvmDetector.getControllerMajorVersion());
 
         JSONObject statusCounts = new JSONObject();
         for (Map.Entry<String, Integer> entry : overview.getStatusCounts().entrySet()) {
@@ -124,6 +125,19 @@ public class FleetJsonSerializer {
         osJson.put("arch", os.getArch());
         osJson.put("icon", os.getIcon());
         json.put("os", osJson);
+
+        // JVM
+        if (agent.getJvm() != null) {
+            JSONObject jvmJson = new JSONObject();
+            jvmJson.put("version", agent.getJvm().getVersion());
+            jvmJson.put("majorVersion", agent.getJvm().getMajorVersion());
+            jvmJson.put("controllerMajorVersion", agent.getJvm().getControllerMajorVersion());
+            jvmJson.put("versionMismatch", agent.getJvm().isVersionMismatch());
+            if (agent.getJvm().getMismatchWarning() != null) {
+                jvmJson.put("mismatchWarning", agent.getJvm().getMismatchWarning());
+            }
+            json.put("jvm", jvmJson);
+        }
 
         // Storage
         StorageDto storage = agent.getStorage();

@@ -39,6 +39,7 @@ public class AgentDto implements Serializable {
     private int numExecutors;
     private Long responseTimeMs;
     private Long clockDifferenceMs;
+    private JvmDto jvm;
 
     public AgentDto() {}
 
@@ -250,5 +251,13 @@ public class AgentDto implements Serializable {
 
     public void setClockDifferenceMs(Long clockDifferenceMs) {
         this.clockDifferenceMs = clockDifferenceMs;
+    }
+
+    public JvmDto getJvm() {
+        return jvm;
+    }
+
+    public void setJvm(JvmDto jvm) {
+        this.jvm = jvm;
     }
 }

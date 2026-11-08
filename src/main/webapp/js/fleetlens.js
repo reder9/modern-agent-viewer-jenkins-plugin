@@ -218,6 +218,13 @@
           el.viewBtnTable.classList.toggle('active', view === 'table');
         }
       }
+
+      const connectTarget = params.get('connect');
+      if (connectTarget) {
+        setTimeout(function() {
+          openConnectModal(connectTarget);
+        }, 150);
+      }
     } catch (e) {
       console.warn('[Modern Agent Viewer] Could not restore URL parameters', e);
     }
@@ -575,21 +582,74 @@
       });
     }
 
-    // Global keyboard shortcuts
+    // Global keyboard shortcuts (/, Ctrl+K, Esc, R, V)
     window.addEventListener('keydown', function(e) {
-      if (e.key === '/' && document.activeElement !== el.searchInput) {
+      const isInput = document.activeElement && (
+        document.activeElement.tagName === 'INPUT' ||
+        document.activeElement.tagName === 'TEXTAREA' ||
+        document.activeElement.tagName === 'SELECT' ||
+        document.activeElement.isContentEditable
+      );
+
+      // Focus search bar: / (when not typing in form field) or Ctrl+K / Cmd+K (anywhere)
+      if ((e.key === '/' && !isInput) || ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K'))) {
         e.preventDefault();
-        el.searchInput.focus();
-      } else if (e.key === 'Escape') {
+        if (el.searchInput) {
+          el.searchInput.focus();
+          el.searchInput.select();
+        }
+        return;
+      }
+
+      // Escape: dismiss modals or clear search & filters
+      if (e.key === 'Escape') {
+        const modalOpen = (el.modalOffline && el.modalOffline.style.display === 'flex') ||
+                          (el.modalConnect && el.modalConnect.style.display === 'flex') ||
+                          (el.modalTerminal && el.modalTerminal.style.display === 'flex');
         closeModal();
         closeConnectModal();
-        if (state.filters.search) {
-          el.searchInput.value = '';
-          state.filters.search = '';
-          if (el.searchClear) el.searchClear.style.display = 'none';
-          syncUrlState();
-          render();
+        closeTerminalModal();
+        if (!modalOpen) {
+          if (state.filters.search) {
+            clearTimeout(searchDebounceTimer);
+            el.searchInput.value = '';
+            state.filters.search = '';
+            if (el.searchClear) el.searchClear.style.display = 'none';
+            syncUrlState();
+            render();
+          } else if (state.filters.provisioner !== 'ALL' || state.filters.os !== 'ALL' || state.filters.status !== 'ALL') {
+            resetFilters();
+          }
         }
+        return;
+      }
+
+      // Do not process view/refresh hotkeys while typing inside inputs or textareas
+      if (isInput) return;
+
+      // 'R' / 'r': Refresh fleet data immediately
+      if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        if (el.btnRefreshNow) {
+          el.btnRefreshNow.classList.add('spinning');
+          fetchFleetData(function() {
+            el.btnRefreshNow.classList.remove('spinning');
+          });
+        }
+        return;
+      }
+
+      // 'V' / 'v': Toggle view mode between Cards and Table
+      if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        state.viewMode = state.viewMode === 'cards' ? 'table' : 'cards';
+        if (el.viewBtnCards && el.viewBtnTable) {
+          el.viewBtnCards.classList.toggle('active', state.viewMode === 'cards');
+          el.viewBtnTable.classList.toggle('active', state.viewMode === 'table');
+        }
+        syncUrlState();
+        render();
+        return;
       }
     });
   }
@@ -1114,6 +1174,39 @@
       const connDuration = tm.connectedDurationHuman || '--';
       const hostUptime = tm.hostUptimeHuman || '--';
 
+      // JVM Badge & Version Mismatch Indicator
+      let jvmBadge = '';
+      if (agent.jvm && agent.jvm.version) {
+        if (agent.jvm.versionMismatch) {
+          jvmBadge = `
+            <span class="jvm-chip mismatch" title="${escapeHtml(agent.jvm.mismatchWarning || 'Java version mismatch with controller')}">
+              <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))} (Mismatch)</span>
+            </span>
+          `;
+        } else {
+          jvmBadge = `
+            <span class="jvm-chip" title="Agent JVM Version: ${escapeHtml(agent.jvm.version)}">
+              <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))}</span>
+            </span>
+          `;
+        }
+      }
+
+      // Clock Drift Warning Banner (> 5000ms / 5s skew)
+      let clockDriftBanner = '';
+      if (agent.clockDifferenceMs !== undefined && agent.clockDifferenceMs !== null && Math.abs(agent.clockDifferenceMs) > 5000) {
+        const driftSign = agent.clockDifferenceMs > 0 ? '+' : '';
+        const driftSec = (agent.clockDifferenceMs / 1000).toFixed(1);
+        clockDriftBanner = `
+          <div class="agent-clock-drift-banner" title="System clock is skewed by ${driftSign}${driftSec}s relative to Jenkins controller. Skew > 5s can cause AWS SigV4, TLS, and SAML authentication failures.">
+            <svg class="fl-svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Clock Drift: <strong>${driftSign}${driftSec}s</strong> (NTP skew detected)</span>
+          </div>
+        `;
+      }
+
       // Build card HTML
       const computerUrl = ROOT_URL + '/computer/' + encodeURIComponent(agent.name === '(built-in)' ? '(built-in)' : agent.name);
 
@@ -1136,6 +1229,7 @@
               <span class="origin-badge ${provBadgeClass}" title="${escapeHtml(provName)}">${provIcon} <span class="badge-text">${escapeHtml(provName)}</span></span>
               <span class="os-badge" title="${escapeHtml(osPretty)}">${osIcon} <span class="badge-text">${escapeHtml(osPretty)}</span></span>
               ${osArch ? `<span class="arch-chip">${escapeHtml(osArch)}</span>` : ''}
+              ${jvmBadge}
               ${agent.ipAddress ? `
                 <button class="fl-copy-chip btn-copy-ip" data-copy="${escapeHtml(agent.ipAddress)}" title="Click to copy IP: ${escapeHtml(agent.ipAddress)}" type="button">
                   <svg class="fl-svg-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -1147,6 +1241,7 @@
         </div>
 
         <div class="card-body">
+          ${clockDriftBanner}
           ${agent.isTemporarilyOffline ? `
             <div class="agent-offline-reason-banner">
               <svg class="fl-svg-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -1297,6 +1392,41 @@
       const hostUptime = tm.hostUptimeHuman || '--';
       const activeExec = agent.executors.filter(e => e.busy).length;
 
+      // JVM Badge & Mismatch indicator
+      let jvmBadge = '';
+      if (agent.jvm && agent.jvm.version) {
+        if (agent.jvm.versionMismatch) {
+          jvmBadge = `
+            <span class="jvm-chip mismatch" style="margin-left: 4px;" title="${escapeHtml(agent.jvm.mismatchWarning || 'Java version mismatch with controller')}">
+              <svg class="fl-svg-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span>Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))} (Mismatch)</span>
+            </span>
+          `;
+        } else {
+          jvmBadge = `
+            <span class="jvm-chip" style="margin-left: 4px;" title="Agent JVM Version: ${escapeHtml(agent.jvm.version)}">
+              <svg class="fl-svg-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+              <span>Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))}</span>
+            </span>
+          `;
+        }
+      }
+
+      // Clock drift chip (> 5000ms / 5s skew)
+      let clockDriftTableChip = '';
+      if (agent.clockDifferenceMs !== undefined && agent.clockDifferenceMs !== null && Math.abs(agent.clockDifferenceMs) > 5000) {
+        const driftSign = agent.clockDifferenceMs > 0 ? '+' : '';
+        const driftSec = (agent.clockDifferenceMs / 1000).toFixed(1);
+        clockDriftTableChip = `
+          <div>
+            <span class="table-clock-drift-chip" title="System clock is skewed by ${driftSign}${driftSec}s relative to controller. Skew > 5s can break AWS SigV4, TLS, SAML.">
+              <svg class="fl-svg-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span>Drift ${driftSign}${driftSec}s</span>
+            </span>
+          </div>
+        `;
+      }
+
       tr.innerHTML = `
         <td style="width: 32px; text-align: center;">
           ${agent.name !== '(built-in)' ? `
@@ -1328,9 +1458,11 @@
         <td>
           <span class="os-badge" title="${escapeHtml(osPretty)}">${osIcon} <span class="badge-text">${escapeHtml(osPretty)}</span></span>
           ${osArch ? `<span class="arch-chip">${escapeHtml(osArch)}</span>` : ''}
+          ${jvmBadge}
         </td>
         <td>
           <div><strong>${escapeHtml(agent.status)}</strong></div>
+          ${clockDriftTableChip}
           ${agent.isTemporarilyOffline && (agent.offlineCauseReason || agent.offlineCause) ? `
             <div class="table-offline-reason" title="${escapeHtml(agent.offlineCauseReason || agent.offlineCause)}">
               ${escapeHtml(agent.offlineCauseReason || agent.offlineCause)}
@@ -1951,6 +2083,16 @@
         <span class="os-badge">${osIcon} ${escapeHtml(osPretty)}</span>
         ${agent.ipAddress ? `<span class="node-meta-chip">IP: ${escapeHtml(agent.ipAddress)}</span>` : ''}
         ${agent.hostName && agent.hostName !== agent.ipAddress ? `<span class="node-meta-chip">Host: ${escapeHtml(agent.hostName)}</span>` : ''}
+        ${agent.jvm && agent.jvm.version ? `
+          <span class="node-meta-chip" style="${agent.jvm.versionMismatch ? 'background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.35); font-weight: 600;' : ''}" title="${escapeHtml(agent.jvm.mismatchWarning || 'Agent JVM Version')}">
+            Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))}${agent.jvm.versionMismatch ? ' (Mismatch)' : ''}
+          </span>
+        ` : ''}
+        ${agent.clockDifferenceMs !== undefined && agent.clockDifferenceMs !== null && Math.abs(agent.clockDifferenceMs) > 5000 ? `
+          <span class="node-meta-chip" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); font-weight: 600;" title="Clock drift relative to controller">
+            Clock Drift: ${agent.clockDifferenceMs > 0 ? '+' : ''}${(agent.clockDifferenceMs / 1000).toFixed(1)}s
+          </span>
+        ` : ''}
         ${resolvedUser ? `
           <span class="node-meta-chip connect-user-chip" title="Resolved user identity: ${escapeHtml(resolvedUser)} (Source: ${escapeHtml(userSource || 'Default')})">
             <svg class="fl-svg-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
@@ -2146,6 +2288,16 @@
         <span class="os-badge">${osIcon} ${escapeHtml(osPretty)}</span>
         ${agent.ipAddress ? `<span class="node-meta-chip">IP: ${escapeHtml(agent.ipAddress)}</span>` : ''}
         ${agent.hostName && agent.hostName !== agent.ipAddress ? `<span class="node-meta-chip">Host: ${escapeHtml(agent.hostName)}</span>` : ''}
+        ${agent.jvm && agent.jvm.version ? `
+          <span class="node-meta-chip" style="${agent.jvm.versionMismatch ? 'background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.35); font-weight: 600;' : ''}" title="${escapeHtml(agent.jvm.mismatchWarning || 'Agent JVM Version')}">
+            Java ${escapeHtml(String(agent.jvm.majorVersion || agent.jvm.version))}${agent.jvm.versionMismatch ? ' (Mismatch)' : ''}
+          </span>
+        ` : ''}
+        ${agent.clockDifferenceMs !== undefined && agent.clockDifferenceMs !== null && Math.abs(agent.clockDifferenceMs) > 5000 ? `
+          <span class="node-meta-chip" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); font-weight: 600;" title="Clock drift relative to controller">
+            Clock Drift: ${agent.clockDifferenceMs > 0 ? '+' : ''}${(agent.clockDifferenceMs / 1000).toFixed(1)}s
+          </span>
+        ` : ''}
       `;
     }
 

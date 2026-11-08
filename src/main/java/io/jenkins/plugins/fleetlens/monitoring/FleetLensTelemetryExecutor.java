@@ -140,6 +140,11 @@ public final class FleetLensTelemetryExecutor {
         if (connFuture != null) {
             futures.add(connFuture);
         }
+
+        CompletableFuture<?> jvmFuture = AgentJvmDetector.warmupAsync(computer);
+        if (jvmFuture != null) {
+            futures.add(jvmFuture);
+        }
     }
 
     private static void awaitFuturesBounded(List<CompletableFuture<?>> futures, long maxWaitMs) {
