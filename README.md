@@ -10,22 +10,30 @@ Modern Agent Viewer transforms the default Jenkins agent and computer management
 
 ---
 
+## Classic Jenkins vs. Modern Agent Viewer
+
+![Classic Jenkins vs Modern Agent Viewer Comparison](docs/images/comparison_classic_vs_modern.png)
+
+| Capability | Classic Jenkins (`/computer/`) | Modern Agent Viewer (`/agents/`) |
+| :--- | :--- | :--- |
+| **Fleet Overview** | Static flat table with raw text columns | Live KPI bar (total machines, availability, active workload, idle capacity, offline alerts, storage health) |
+| **Provider & OS Visibility** | Generic `Linux (amd64)` / `Windows` text only | Automatic categorization for Docker, Kubernetes, EC2, Azure, GCP, Static, and Controller with exact OS distro, Java, and Remoting badges |
+| **Resource Telemetry** | Numeric `Free Disk Space` / `Free Swap` only | Color-coded visual Storage and RAM gauges with configurable warning/critical thresholds and temp-space tracking |
+| **Uptime & Connectivity** | Response time ping only | Dual-clock telemetry separating **Session Connected** duration from **Host OS Uptime** to spot flapping vs. stale hosts |
+| **Search, Filter & Export** | Manual browser `Ctrl+F`; no export | Instant client-side search across names, labels, IPs, and hosts, provider/OS/status filter pills, and 1-click CSV/JSON export |
+| **Diagnostics & Bulk Actions** | Click into each node individually | Inline audited **Diagnostic Console**, 1-click **Connect Helper**, bulk Offline/Online/IP copy, and modernized per-node **Agent Inspector** |
+
+---
+
 ## Screenshots
 
-### Fleet Dashboard — Card Matrix View
-Live KPI summary cards, provider/OS/status filtering, storage and RAM gauges, dual-clock uptime telemetry, executor chips, and quick actions across Controller, Docker, and Static agents:
+| Fleet Dashboard — Card Matrix View | Fleet Dashboard — High-Density Table View |
+| :--- | :--- |
+| ![Modern Agent Viewer Card Matrix View](docs/images/dashboard-cards.png) | ![Modern Agent Viewer High-Density Table View](docs/images/dashboard-table.png) |
 
-![Modern Agent Viewer Card Matrix View](docs/images/dashboard-cards.png)
-
-### Fleet Dashboard — High-Density Table View
-Compact, sortable fleet inventory table with inline provider/platform badges, storage & RAM usage bars, uptime, executor utilization, bulk selection, and per-node quick actions:
-
-![Modern Agent Viewer High-Density Table View](docs/images/dashboard-table.png)
-
-### Interactive Agent Diagnostic Console
-Run audited diagnostic presets or custom commands directly on an agent over the encrypted Jenkins Remoting channel with live output, exit code, and execution timing:
-
-![Modern Agent Viewer Diagnostic Console](docs/images/diagnostic-console.png)
+| Modern Agent Inspector | Interactive Diagnostic Console |
+| :--- | :--- |
+| ![Modern Agent Viewer Agent Inspector](docs/images/agent-inspector.png) | ![Modern Agent Viewer Diagnostic Console](docs/images/diagnostic-console.png) |
 
 ---
 
