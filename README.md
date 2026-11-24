@@ -10,6 +10,25 @@ Modern Agent Viewer transforms the default Jenkins agent and computer management
 
 ---
 
+## Screenshots
+
+### Fleet Dashboard — Card Matrix View
+Live KPI summary cards, provider/OS/status filtering, storage and RAM gauges, dual-clock uptime telemetry, executor chips, and quick actions across Controller, Docker, and Static agents:
+
+![Modern Agent Viewer Card Matrix View](docs/images/dashboard-cards.png)
+
+### Fleet Dashboard — High-Density Table View
+Compact, sortable fleet inventory table with inline provider/platform badges, storage & RAM usage bars, uptime, executor utilization, bulk selection, and per-node quick actions:
+
+![Modern Agent Viewer High-Density Table View](docs/images/dashboard-table.png)
+
+### Interactive Agent Diagnostic Console
+Run audited diagnostic presets or custom commands directly on an agent over the encrypted Jenkins Remoting channel with live output, exit code, and execution timing:
+
+![Modern Agent Viewer Diagnostic Console](docs/images/diagnostic-console.png)
+
+---
+
 ## Key Features
 
 ### 1. Dynamic Provider Categorization
